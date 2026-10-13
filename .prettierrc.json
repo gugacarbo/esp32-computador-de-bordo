@@ -1,0 +1,12 @@
+{
+	"$schema": "https://json.schemastore.org/prettierrc",
+	"plugins": ["prettier-plugin-sh"],
+	"overrides": [
+		{
+			"files": ["*.md", "*.yml", "*.yaml"],
+			"useTabs": false,
+			"printWidth": 100,
+			"proseWrap": "always"
+		}
+	]
+}

@@ -1,0 +1,24 @@
+{
+	"name": "@esp32-computador-de-bordo/app",
+	"version": "0.1.0",
+	"private": true,
+	"type": "module",
+	"engines": {
+		"bun": ">=1.2.0"
+	},
+	"scripts": {
+		"dev": "bun --watch src/index.ts",
+		"build": "bun build src/index.ts --outdir dist --target bun",
+		"typecheck": "tsc --noEmit",
+		"test": "bun test",
+		"test:watch": "bun test --watch",
+		"test:coverage": "bun test --coverage"
+	},
+	"dependencies": {
+		"@t3-oss/env-core": "^0.13",
+		"zod": "^3"
+	},
+	"devDependencies": {
+		"@types/bun": "^1.4.3"
+	}
+}

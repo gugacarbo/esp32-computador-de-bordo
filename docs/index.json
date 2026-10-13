@@ -1,0 +1,103 @@
+[
+  {
+    "id": "ADR-0001",
+    "path": "docs/adr/0001-adota-bun-workspaces-para-monorepo.md",
+    "layer": "adr",
+    "title": "Adota Bun workspaces para separar app e pacotes",
+    "status": "accepted",
+    "builds-on": [],
+    "superseded-by": null,
+    "implemented-by": []
+  },
+  {
+    "id": "ADR-0002",
+    "path": "docs/adr/0002-adota-firmware-c-com-platformio-no-monorepo.md",
+    "layer": "adr",
+    "title": "Adota firmware C++ com PlatformIO no monorepo",
+    "status": "accepted",
+    "builds-on": [
+      "ADR-0001"
+    ],
+    "superseded-by": null,
+    "implemented-by": []
+  },
+  {
+    "id": "ADR-0003",
+    "path": "docs/adr/0003-usa-elm327-via-bluetooth-classic-para-acesso-obd.md",
+    "layer": "adr",
+    "title": "Usa ELM327 via Bluetooth Classic para acesso OBD",
+    "status": "accepted",
+    "builds-on": [
+      "ADR-0002"
+    ],
+    "superseded-by": null,
+    "implemented-by": []
+  },
+  {
+    "id": "ADR-0004",
+    "path": "docs/adr/0004-isola-obd-em-uma-task-e-compartilha-leituras-em-memoria.md",
+    "layer": "adr",
+    "title": "Isola OBD em uma task e compartilha leituras em memória",
+    "status": "accepted",
+    "builds-on": [
+      "ADR-0002",
+      "ADR-0003"
+    ],
+    "superseded-by": null,
+    "implemented-by": []
+  },
+  {
+    "id": "ADR-0005",
+    "path": "docs/adr/0005-serve-painel-offline-por-http-com-polling.md",
+    "layer": "adr",
+    "title": "Serve painel offline por HTTP com polling",
+    "status": "accepted",
+    "builds-on": [
+      "ADR-0002",
+      "ADR-0004"
+    ],
+    "superseded-by": null,
+    "implemented-by": []
+  },
+  {
+    "id": "SPEC-0001",
+    "path": "docs/specs/0001-coleta-sensores-obd-e-recupera-a-conexao.md",
+    "layer": "specs",
+    "title": "Coleta sensores OBD e recupera a conexão",
+    "status": "draft",
+    "builds-on": [
+      "ADR-0002",
+      "ADR-0003",
+      "ADR-0004"
+    ],
+    "superseded-by": null,
+    "implemented-by": []
+  },
+  {
+    "id": "SPEC-0002",
+    "path": "docs/specs/0002-expoe-o-estado-das-leituras-na-api-local.md",
+    "layer": "specs",
+    "title": "Expõe o estado das leituras na API local",
+    "status": "draft",
+    "builds-on": [
+      "ADR-0004",
+      "ADR-0005",
+      "SPEC-0001"
+    ],
+    "superseded-by": null,
+    "implemented-by": []
+  },
+  {
+    "id": "SPEC-0003",
+    "path": "docs/specs/0003-exibe-o-painel-offline-no-android.md",
+    "layer": "specs",
+    "title": "Exibe o painel offline no Android",
+    "status": "draft",
+    "builds-on": [
+      "ADR-0005",
+      "SPEC-0002"
+    ],
+    "superseded-by": null,
+    "implemented-by": []
+  }
+]

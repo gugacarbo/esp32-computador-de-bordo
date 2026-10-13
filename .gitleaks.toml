@@ -1,0 +1,12 @@
+# Gerado por project-init (security/gitleaks).
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "fixtures, testes e lockfiles"
+paths = [
+  '''(^|/)(fixtures?|tests?|__tests__|__mocks__)(/|$)''',
+  '''.*\.lock$''',
+  '''pnpm-lock\.yaml$''',
+  '''bun\.lockb?$''',
+]

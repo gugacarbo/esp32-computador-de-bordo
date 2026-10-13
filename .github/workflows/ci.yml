@@ -1,0 +1,55 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.2.0
+      - run: bun install --frozen-lockfile
+      - name: Biome CI
+        run: bunx biome ci .
+      - name: Markdown and shell format
+        run: bun run format:check
+      - name: Spellcheck
+        run: bun run spell
+      - name: Architecture
+        run: bun run architecture:check
+      - name: CASA documentation
+        run: bun run docs:check
+      - name: Knip report
+        run: bun run knip:report
+      - name: Typecheck
+        run: bun run typecheck
+      - name: Test
+        run: bun run test
+      - name: Build
+        run: bun run build
+
+  gitleaks:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: gitleaks/gitleaks-action@v8.24.2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

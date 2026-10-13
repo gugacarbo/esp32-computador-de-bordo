@@ -1,0 +1,4 @@
+# Verifica segredos staged e executa checks nos arquivos staged.
+gitleaks git --pre-commit --staged --redact --verbose
+bunx lint-staged
+bun run docs:check

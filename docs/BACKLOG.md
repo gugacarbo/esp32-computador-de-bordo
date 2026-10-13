@@ -1,0 +1,23 @@
+# Backlog — esp32-computador-de-bordo
+
+Pendências e reservas de numeração (STANDARD §5, ADR-0002, ADR-0013).
+Reserve com `scripts/docs-reserve adr|spec "título"` — linha fora do
+formato da tabela é apontada pelo comando, nunca lida em silêncio.
+
+## Reservas ADR
+
+| NNNN | título                                                  | data       | situação |
+| ---- | ------------------------------------------------------- | ---------- | -------- |
+| 0001 | adota-bun-workspaces-para-monorepo                      | 2026-10-13 | em uso   |
+| 0002 | Adota firmware C++ com PlatformIO no monorepo           | 2026-10-13 | em uso   |
+| 0003 | Usa ELM327 via Bluetooth Classic para acesso OBD        | 2026-10-13 | em uso   |
+| 0004 | Isola OBD em uma task e compartilha leituras em memória | 2026-10-13 | em uso   |
+| 0005 | Serve painel offline por HTTP com polling               | 2026-10-13 | em uso   |
+
+## Reservas Spec
+
+| NNNN | título                                   | data       | situação |
+| ---- | ---------------------------------------- | ---------- | -------- |
+| 0001 | Coleta sensores OBD e recupera a conexão | 2026-10-13 | em uso   |
+| 0002 | Expõe o estado das leituras na API local | 2026-10-13 | em uso   |
+| 0003 | Exibe o painel offline no Android        | 2026-10-13 | em uso   |
