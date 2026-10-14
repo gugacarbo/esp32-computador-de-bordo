@@ -41,12 +41,13 @@ complementa aquela fronteira, sem substituir o monorepo.
 
 ## Decisão
 
-Usar PlatformIO com o framework Arduino e C++ para o firmware, em `firmware/`, fora dos padrões de
-workspaces Bun `apps/*` e `packages/*`. O identificador inicial da placa é `esp32doit-devkit-v1`.
-O app Bun existente não passa a ser servidor de produção nem intermediário obrigatório do dispositivo.
+Usar PlatformIO com o framework Arduino e C++ para o firmware, fora dos padrões de workspaces Bun
+`apps/*` e `packages/*`. O identificador inicial da placa é `esp32doit-devkit-v1`. O app Bun
+existente não passa a ser servidor de produção nem intermediário obrigatório do dispositivo.
 
-A implementação começa com `firmware/platformio.ini`, `firmware/src/main.cpp` e
-`firmware/include/config.h`; a interface fica em um recurso local do firmware conforme ADR-0005.
+A implementação começou com `platformio.ini`, `src/main.cpp` e `include/config.h` em `firmware/` na
+raiz; desde 2026-10-14 vive em `apps/firmware/` (ADR-0006) com os mesmos arquivos, e a interface é um
+recurso local do firmware conforme ADR-0005.
 Separar novos arquivos apenas quando melhorar a leitura ou viabilizar testes relevantes.
 Não criar camadas de domínio, serviços e repositórios para este MVP.
 
@@ -56,11 +57,12 @@ Não criar camadas de domínio, serviços e repositórios para este MVP.
 - Os comandos Bun do bootstrap não comprovam compilação, gravação nem funcionamento no ESP32.
 - Versões de plataforma e bibliotecas serão fixadas na configuração ao validar a primeira compilação.
 - Uma integração futura de checks do firmware preserva os checks Bun existentes e explicita a cobertura.
+- A localização original `firmware/` na raiz foi substituída por `apps/firmware/` em 2026-10-14; ver ADR-0006.
 - O uso aprovado é USB durante testes; alimentação automotiva permanente é uma decisão futura.
 
 ## Confirmação
 
-Na implementação, inspecionar `firmware/platformio.ini` para conferir placa, framework e dependências
+Na implementação, inspecionar `apps/firmware/platformio.ini` para conferir placa, framework e dependências
 fixadas; compilar e gravar pela toolchain documentada e conferir o boot pelo Serial. Inspecionar que o
 firmware não executa nem depende do runtime Bun. Esta ADR registra a escolha, não a existência desses
 arquivos ou a execução desses testes.

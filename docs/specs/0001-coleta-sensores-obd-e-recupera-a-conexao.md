@@ -1,5 +1,5 @@
 ---
-status: draft
+status: accepted
 date: 2026-10-13
 builds-on: [ADR-0002, ADR-0003, ADR-0004]
 implemented-by: []
@@ -14,8 +14,9 @@ ESP32-WROOM-32 e o scanner ELM327 Bluetooth existente, mantendo o painel dispon�
 RPM, velocidade e temperatura do líquido de arrefecimento são obrigatórios para concluir esta entrega.
 Borboleta, MAP e tensão são consultados quando disponíveis; ausência de suporte não impede o aceite.
 
-O comportamento foi aprovado em 2026-10-13. O estado documental permanece `draft` até existir DoD
-executável específico, com testes e toolchain do firmware. Esta Spec não descreve firmware já entregue.
+O comportamento foi aprovado em 2026-10-13. A toolchain e as suítes nativas existem em
+`apps/firmware` e a cobertura executável está registrada em Verificação; o ensaio físico no veículo
+permanece pendente e esta Spec não descreve firmware validado no carro.
 
 ## Fluxo
 
@@ -114,9 +115,16 @@ são hipóteses de hardware a verificar, não garantias de compatibilidade.
 
 ## Definition of Done
 
-Para promover a `accepted`, provisionar a toolchain do firmware e registrar comandos reais para a matriz
-abaixo. Não usar o teste de startup Bun como prova de coleta ou recuperação OBD. Os comandos e suites
-específicos ainda não existem; esta é a razão de permanecer `draft`.
+A toolchain está provisionada e as suítes determinísticas existem; os comandos canônicos da matriz são:
+
+```bash
+.venv/bin/pio test -d apps/firmware -e native
+.venv/bin/pio run -d apps/firmware -e esp32doit-devkit-v1
+```
+
+No CI, os mesmos passos rodam como `bun run firmware:test` e `bun run firmware:build`. Não usar o teste
+de startup Bun como prova de coleta ou recuperação OBD. A última linha da matriz (ensaio no Onix)
+permanece pendente de hardware.
 
 | Validação necessária                                                          | Casos cobertos | Critério binário                                                                               |
 | ----------------------------------------------------------------------------- | -------------- | ---------------------------------------------------------------------------------------------- |
@@ -140,8 +148,22 @@ reais em `implemented-by`; não promover a `implemented` com ensaio físico pend
 
 ## Verificação
 
-Somente a documentação foi criada. Não houve compilação, gravação ou teste no carro nesta tarefa.
-A evidência de implementação será registrada no fechamento desta Spec.
+Executado em 2026-10-14, antes do ensaio físico (comandos no host de desenvolvimento; no CI, os
+mesmos passos rodam como `bun run firmware:test` e `bun run firmware:build` com PlatformIO no PATH):
+
+- `.venv/bin/pio test -d apps/firmware -e native` (PlatformIO 6.1.18, Unity): 27 casos GREEN em
+  `test_obd` — sessão (12), recuperação (6), escalonador (7) e configuração (2) — mais `test_http`
+  GREEN, com transporte simulado em `test/test_obd/obd_fakes.h` cobrindo a matriz determinística
+  (casos 1–9 e 11) sem hardware nem espera real.
+- `.venv/bin/pio run -d apps/firmware -e esp32doit-devkit-v1`: build do alvo DOIT sem erro
+  (RAM 13,8%, Flash 60,7%), com `espressif32 6.10.0` e `ELMduino 3.4.1` fixadas em `platformio.ini`.
+- Parâmetros de tempo vigentes: `defaultTimingConfig()` em `apps/firmware/include/config.h`
+  (saúde ECU 5000 ms, timeout 1500 ms, recuperação 1000→30000 ms).
+
+A inspeção da lista de comandos enviados é sustentada pelos testes de sessão com transporte
+gravador (inicialização AT, `AT RV` e consultas do Serviço 01; mapas 00/20/40). O ensaio no Onix
+(última linha da matriz) permanece pendente por depender de hardware; por isso `implemented-by`
+segue vazio.
 
 ## Fora do escopo
 

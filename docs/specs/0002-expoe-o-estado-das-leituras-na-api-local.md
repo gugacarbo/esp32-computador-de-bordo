@@ -1,5 +1,5 @@
 ---
-status: draft
+status: accepted
 date: 2026-10-13
 builds-on: [ADR-0004, ADR-0005, SPEC-0001]
 implemented-by: []
@@ -13,8 +13,9 @@ Permitir que um celular conectado ao ESP32 consulte uma cópia coerente do estad
 resposta do veículo no instante da requisição. Esta Spec é a fonte do contrato HTTP, de rede e dos
 metadados dos sensores. A coleta que produz as leituras pertence à SPEC-0001.
 
-O contrato registra o escopo aprovado. O status permanece `draft` enquanto não houver testes
-executáveis específicos e firmware; `implemented-by` vazio não indica uma implementação no app Bun.
+O contrato registra o escopo aprovado. Os testes nativos e o firmware existem em `apps/firmware`
+e a cobertura executável está em Verificação; `implemented-by` vazio indica apenas o ensaio físico
+pendente, não uma implementação no app Bun.
 
 ## Fluxo
 
@@ -160,9 +161,16 @@ configurados e registrados com base na medição prevista na SPEC-0001.
 
 ## Definition of Done
 
-Antes de promover a `accepted`, completar a toolchain e vincular cada linha abaixo a comandos reais do
-repositório. Uma execução verde de `docs-check` valida documentos, não JSON, concorrência ou latência.
-Não existem testes da API no bootstrap; esta matriz é o contrato de validação a implementar.
+As suítes nativas e o build do firmware existem; os comandos canônicos da matriz são:
+
+```bash
+.venv/bin/pio test -d apps/firmware -e native
+.venv/bin/pio run -d apps/firmware -e esp32doit-devkit-v1
+```
+
+No CI, `bun run firmware:test` e `bun run firmware:build`. Uma execução verde de `docs-check` valida
+documentos, não JSON, concorrência ou latência. A última linha da matriz (ensaio HTTP em falhas
+provocadas no veículo) permanece pendente de hardware.
 
 | Validação necessária                                                | Casos cobertos | Critério binário                                                                    |
 | ------------------------------------------------------------------- | -------------- | ----------------------------------------------------------------------------------- |
@@ -186,5 +194,16 @@ A execução precisa cobrir a espera completa de inicialização do ELM, não so
 
 ## Verificação
 
-Documentação criada; nenhum servidor HTTP do firmware foi iniciado nem testado nesta tarefa.
-Resultados de API e hardware serão registrados na transição para `implemented`.
+Executado em 2026-10-14, ainda sem ensaio físico:
+
+- `.venv/bin/pio test -d apps/firmware -e native`: `test_http` GREEN (200/404/405, Content-Type,
+  `Cache-Control: no-store`, expiração com produtor parado, fases offline, timeout e adapterReady)
+  e `test_obd` GREEN (serialização do envelope, estados e precedência com relógio controlado,
+  cópia concorrente sem transporte real).
+- `.venv/bin/pio run -d apps/firmware -e esp32doit-devkit-v1`: firmware com API e painel compila
+  para o alvo DOIT.
+- `bun run firmware:test:web`: 17 testes Playwright GREEN consumindo `GET /api/data` de um fixture
+  local que serve o HTML real (SPEC-0003), incluindo JSON inválido e resposta sem estrutura.
+
+O ensaio HTTP durante falhas provocadas no veículo (última linha da matriz) permanece pendente;
+`implemented-by` segue vazio até esse registro.

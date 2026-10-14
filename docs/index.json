@@ -60,11 +60,23 @@
     "implemented-by": []
   },
   {
+    "id": "ADR-0006",
+    "path": "docs/adr/0006-move-o-firmware-para-apps-firmware.md",
+    "layer": "adr",
+    "title": "Move o firmware para apps/firmware",
+    "status": "accepted",
+    "builds-on": [
+      "ADR-0002"
+    ],
+    "superseded-by": null,
+    "implemented-by": []
+  },
+  {
     "id": "SPEC-0001",
     "path": "docs/specs/0001-coleta-sensores-obd-e-recupera-a-conexao.md",
     "layer": "specs",
     "title": "Coleta sensores OBD e recupera a conexão",
-    "status": "draft",
+    "status": "accepted",
     "builds-on": [
       "ADR-0002",
       "ADR-0003",
@@ -78,7 +90,7 @@
     "path": "docs/specs/0002-expoe-o-estado-das-leituras-na-api-local.md",
     "layer": "specs",
     "title": "Expõe o estado das leituras na API local",
-    "status": "draft",
+    "status": "accepted",
     "builds-on": [
       "ADR-0004",
       "ADR-0005",
@@ -92,7 +104,7 @@
     "path": "docs/specs/0003-exibe-o-painel-offline-no-android.md",
     "layer": "specs",
     "title": "Exibe o painel offline no Android",
-    "status": "draft",
+    "status": "accepted",
     "builds-on": [
       "ADR-0005",
       "SPEC-0002"

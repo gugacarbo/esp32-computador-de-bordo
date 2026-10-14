@@ -1,5 +1,5 @@
 ---
-status: draft
+status: accepted
 date: 2026-10-13
 builds-on: [ADR-0005, SPEC-0002]
 implemented-by: []
@@ -12,9 +12,9 @@ implemented-by: []
 Exibir o estado do Onix no navegador Android conectado ao Wi-Fi do ESP32, com interface simples,
 responsiva e totalmente offline. A página apresenta dados já coletados; não controla o veículo.
 
-O comportamento foi aprovado, mas a Spec permanece `draft`: a configuração Playwright do bootstrap
-não contém página nem testes deste fluxo. A promoção exige comandos reais que exercitem os estados
-abaixo, sem tratar o teste de startup Bun como evidência de interface.
+O painel está implementado em `apps/firmware/include/dashboard.h` (HTML/CSS/JS locais em literal
+bruto) e validado por Playwright contra esse HTML real; comandos e cobertura estão em Verificação.
+O ensaio integrado em navegador Android físico permanece pendente.
 
 ## Fluxo
 
@@ -102,9 +102,14 @@ referência Figma ou design system externo obrigatório.
 
 ## Definition of Done
 
-Antes de promover a `accepted`, disponibilizar a página e uma forma de exercitar snapshots controlados
-nos testes do repositório. Registrar comandos reais para cada linha abaixo. O Playwright configurado
-sem testes não é DoD executável desta Spec; não criar comando fictício para fazê-la parecer aceita.
+A página e os testes Playwright com snapshots controlados existem; o comando canônico da matriz é:
+
+```bash
+bun run firmware:test:web
+```
+
+A suíte acima cobre as quatro primeiras linhas da matriz no navegador contra o HTML real servido localmente;
+a última (ensaio integrado com API e navegador Android no Wi-Fi do ESP32) permanece pendente de hardware.
 
 | Validação necessária                                                     | Casos cobertos | Critério binário                                                                  |
 | ------------------------------------------------------------------------ | -------------- | --------------------------------------------------------------------------------- |
@@ -126,8 +131,20 @@ explicitamente registrados. Simulação no navegador não substitui o ensaio Wi-
 
 ## Verificação
 
-A interface ainda não foi implementada nem testada. Registrar evidência de testes de navegador e de
-ensaio Android no fechamento; manter `implemented-by` vazio até haver os arquivos reais.
+Executado em 2026-10-14, em Chromium headless contra fixture local (`node:http`) que serve o HTML
+real extraído de `apps/firmware/include/dashboard.h`:
+
+- `bun run firmware:test:web` (`playwright test -c playwright.firmware.config.ts`): 17 testes GREEN —
+  `dashboard.render.spec.ts` (casos 1–5, 9–10: estados do painel e dos cartões, zero legítimo,
+  origem da tensão, sem requisição externa), `dashboard.polling.spec.ts` (casos 6–7, 11: no máximo
+  uma requisição em andamento, timeout do cliente, HTTP/JSON/estrutura inválidos, recuperação
+  automática, retomada de aba suspensa sem rajada) e `dashboard.layout.spec.ts` (caso 8: 320 e
+  360 px sem rolagem horizontal e tela larga com três colunas).
+- O fixture `apps/firmware/web-tests/dashboard-server.ts` roda sobre `node:http` porque o runner
+  Playwright deste repositório executa em Node (probe registrou `Bun.serve` indisponível).
+
+O ensaio integrado com API real e navegador Android via Wi-Fi do ESP32 (última linha da matriz)
+permanece pendente; `implemented-by` segue vazio até essa evidência.
 
 ## Fora do escopo
 
