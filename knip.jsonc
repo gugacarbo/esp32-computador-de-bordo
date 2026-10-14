@@ -11,5 +11,6 @@
 		}
 	},
 	"ignore": [],
-	"ignoreDependencies": []
+	"ignoreDependencies": [],
+	"ignoreBinaries": ["pio"]
 }

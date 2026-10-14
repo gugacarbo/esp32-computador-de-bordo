@@ -12,19 +12,27 @@ words:
   - canonico
   - commitar
   - conexao
+  - cspell
   - depcruise
   - deno
   - deployar
   - ELMduino
+  - espressif32
   - Espressif
   - expoe
   - frontmatter
+  - gugacarbo
+  - headless
+  - knip
   - OBDII
   - onix
   - outdir
+  - Playwright
+  - prettier
   - pytest
   - serialização
   - supabase
   - WROOM
   - venv
   - ensurepip
+  - webtests
