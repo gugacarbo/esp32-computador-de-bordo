@@ -18,14 +18,14 @@ casa-standard-ref: 7cdb964c54fe0fa0f2c6a4b7e175d09cf5f72749
 Monorepo Bun para um computador de bordo ESP32, em desenvolvimento.
 O app atual é TypeScript executado por Bun e vive em `apps/computador-de-bordo/`.
 Bibliotecas compartilhadas ficam em `packages/` quando houver mais de um consumidor.
-Firmware e hardware ainda não estão configurados.
+O firmware PlatformIO vive em `apps/firmware/`; o ensaio físico no veículo ainda é pendente.
 
 ## Infra & ambientes
 
 - Workspaces nativos do Bun usam os padrões `apps/*` e `packages/*`; `bun.lock` fica na raiz.
 - Apps têm manifesto próprio; mantenha ferramentas comuns e scripts agregadores na raiz.
 - Desenvolvimento e checks locais usam Bun 1.2+; CI roda no GitHub Actions com Bun e Node 22.
-- O app atual roda no host Bun. Ainda não há integração com placa, protocolo, serviço externo ou infraestrutura de produção.
+- O app atual roda no host Bun. O firmware compila para o ESP32 DOIT, mas não há ensaio físico, serviço externo ou infraestrutura de produção.
 - Não há banco de dados nem segredos obrigatórios. `NODE_ENV` é opcional e aceita `development`, `test` ou `production`.
 - Nunca versione `.env`; use `.env.example` como referência sem valores secretos.
 
@@ -34,6 +34,10 @@ Firmware e hardware ainda não estão configurados.
 ```bash
 bun install --frozen-lockfile
 bun run dev
+# Firmware (PlatformIO 6.1.18): no host de desenvolvimento, pio vive em .venv/bin
+.venv/bin/pio test -d apps/firmware -e native
+.venv/bin/pio run -d apps/firmware -e esp32doit-devkit-v1
+bun run firmware:test:web
 ```
 
 ## Como validar (DoD global do repo)
@@ -49,6 +53,9 @@ bun run docs:check
 bun run typecheck
 bun run test
 bun run build
+PATH=$PWD/.venv/bin:$PATH bun run firmware:test
+PATH=$PWD/.venv/bin:$PATH bun run firmware:build
+bun run firmware:test:web
 ```
 
 ## Como deployar
@@ -59,12 +66,13 @@ Não há destino nem processo de deploy configurado.
 
 - A branch inicial é `main`; commits devem seguir Conventional Commits e passam por Commitlint.
 - O pre-commit verifica segredos staged, executa lint-staged e valida a documentação CASA.
-- Este clone não tem remote configurado. Não é possível abrir PR nem ativar proteção de branch até configurar o repositório remoto.
+- Remote `origin`: github.com/gugacarbo/esp32-computador-de-bordo. Proteção de branch ainda não ativada.
 
 ## Gotchas
 
 - Use `bunx` para CLIs locais; `bun install --frozen-lockfile` confere o lockfile canônico `bun.lock`.
-- A configuração Playwright está pronta, mas ainda não há aplicação web, endpoint, servidor ou specs E2E. `bun run test:e2e` não encontra testes até um fluxo real ser implementado.
+- Painel do firmware: specs Playwright reais em `apps/firmware/web-tests/` (`bun run firmware:test:web`, config própria `playwright.firmware.config.ts`). O `test:e2e` da raiz segue sem specs do app Bun.
+- `pio` não está no PATH do host: use `.venv/bin/pio` ou exporte `PATH=$PWD/.venv/bin:$PATH` antes dos scripts `firmware:*`. Os testes web rodam sob Node, não Bun (probe registrado `Bun.serve` indisponível no runner).
 - `spell:fix` não altera arquivos: CSpell reporta palavras para revisão manual.
 - `bun run build`, `typecheck` e `test` delegam aos workspaces com filtros Bun; cada novo workspace deve declarar esses scripts.
 - Para checar a arquitetura, rode `bun run architecture:check`; o checker percorre fontes TypeScript/TSX em `apps` e `packages`.
@@ -74,6 +82,7 @@ Não há destino nem processo de deploy configurado.
 | Caminho                     | Conteúdo                                                                       |
 | --------------------------- | ------------------------------------------------------------------------------ |
 | `apps/computador-de-bordo/` | App Bun/TypeScript atual, testes unitários e configuração TS local             |
+| `apps/firmware/`            | Firmware PlatformIO do ESP32: OBD, API, painel offline, testes nativos e web   |
 | `packages/`                 | Pacotes compartilhados; crie um workspace quando houver consumidores reais     |
 | raiz                        | Workspaces Bun, lockfile, ferramentas, scripts globais, CI e documentação CASA |
 

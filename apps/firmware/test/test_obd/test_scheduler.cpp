@@ -54,7 +54,7 @@ void test_sensores_lentos_recebem_cota() {
 void test_rpm_tem_prioridade_na_retomada() {
   ObdHarness h;
   const TimingConfig t = defaultTimingConfig();
-  h.transport.supportPids(ObdHarness::allPids());
+  h.supportPids(ObdHarness::allPids());
   h.valuesOk();
   TEST_ASSERT_TRUE(h.stepUntil(ObdPhase::Polling));
 

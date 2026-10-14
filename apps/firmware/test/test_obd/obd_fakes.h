@@ -38,7 +38,18 @@ struct FakeCall {
   uint64_t atMs = 0;
 };
 
-class RecordingPublisher;
+// Publicador dublê: definido antes do transporte para que FakeTransport::perform
+// possa ler observer->publishes com tipo completo (evita incomplete type).
+class RecordingPublisher : public SnapshotPublisher {
+ public:
+  void publish(const Snapshot& snapshot) override {
+    ++publishes;
+    last = snapshot;
+  }
+
+  uint32_t publishes = 0;
+  Snapshot last{};
+};
 
 // Transporte fake: roteiro de respostas fixas, latência simulada, estado de conexão e contagem
 // de chamadas. Uma chamada "bloqueante" consome tempo no relógio controlado — sem espera real.
@@ -234,7 +245,7 @@ class FakeTransport : public ObdTransport {
 };
 
 // Mapa de suporte sintético para uma base: bit de cada PID da base, mais o bit "há outro mapa".
-uint32_t buildMap(uint8_t base, const std::vector<uint8_t>& pids) {
+inline uint32_t buildMap(uint8_t base, const std::vector<uint8_t>& pids) {
   uint32_t bits = 0x80000000u;
   for (uint8_t pid : pids) {
     if (pid > base && pid <= base + 32 && pid != 0x20 && pid != 0x40) {
@@ -243,18 +254,6 @@ uint32_t buildMap(uint8_t base, const std::vector<uint8_t>& pids) {
   }
   return bits;
 }
-
-// Publicador dublê: guarda a última publicação e conta publicações.
-class RecordingPublisher : public SnapshotPublisher {
- public:
-  void publish(const Snapshot& snapshot) override {
-    ++publishes;
-    last = snapshot;
-  }
-
-  uint32_t publishes = 0;
-  Snapshot last{};
-};
 
 class RecordingLog : public ObdLogSink {
  public:

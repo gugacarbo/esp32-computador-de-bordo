@@ -163,7 +163,7 @@ class ObdSession {
   const TimingConfig& timing() const { return runtime_.config.timing; }
 
   void transition(ObdPhase phase, const char* line);
-  void logTransition(const char* line) const;  // no máximo uma vez por janela
+  void logTransition(const char* line);  // no máximo uma vez por janela, por linha
   void logProtocol();
   void publish();
 
@@ -193,6 +193,7 @@ class ObdSession {
   uint32_t recoveryWaitMs_ = 0;
   uint64_t lastEcuOkMs_ = 0;
   uint32_t lastLogMs_ = 0;
+  const char* lastLogLine_ = nullptr;
   bool logWindowOpen_ = false;
   uint8_t mapBaseIndex_ = 0;
   uint32_t mapBits_[OBD_SUPPORT_MAP_COUNT] = {0, 0, 0};

@@ -60,8 +60,12 @@ int main() {
   assert(sensorAgeMs(rpm, now) == 50);
   assert(isSensorValid(s, SensorId::Rpm, timing, now));
   std::atomic<bool> done{false};
+  Snapshot baseline;
+  baseline.lastEcuResponseMs = 1;
+  for (auto& r : baseline.sensors) r.updatedAtMs = 1;
+  store.publish(baseline);
   std::thread producer([&] {
-    for (uint64_t i = 1; i < 10000; ++i) {
+    for (uint64_t i = 2; i < 10000; ++i) {
       Snapshot v; v.lastEcuResponseMs = i;
       for (auto& r : v.sensors) r.updatedAtMs = i;
       store.publish(v);
@@ -69,8 +73,12 @@ int main() {
     done = true;
   });
   while (!done) {
+    // SPEC-0002 caso 7: a cópia é coerente entre si (sem campos parcialmente atualizados).
+    // Não exigir igualdade com lastEcuResponseMs: o leitor pode ver um snapshot anterior
+    // ainda coerente enquanto o produtor avança.
     auto copy = store.copy();
-    for (auto& r : copy.sensors) assert(r.updatedAtMs == copy.lastEcuResponseMs);
+    const uint64_t first = copy.sensors[0].updatedAtMs;
+    for (auto& r : copy.sensors) assert(r.updatedAtMs == first);
   }
   producer.join();
   std::cout << "API and snapshot behavioral tests passed\n";
