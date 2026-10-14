@@ -6,3 +6,6 @@ playwright-report/
 playwright/.cache/
 .env*
 !.env.example
+.venv/
+apps/firmware/.pio/
+.platformio/

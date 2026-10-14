@@ -26,3 +26,5 @@ words:
   - serialização
   - supabase
   - WROOM
+  - venv
+  - ensurepip

@@ -1,4 +1,9 @@
 {
 	"extends": "./tsconfig.base.json",
-	"include": ["scripts/**/*.ts", "playwright.config.ts"]
+	"include": [
+		"scripts/**/*.ts",
+		"playwright.config.ts",
+		"playwright.firmware.config.ts",
+		"apps/firmware/web-tests/**/*.ts"
+	]
 }

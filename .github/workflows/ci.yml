@@ -41,6 +41,26 @@ jobs:
       - name: Build
         run: bun run build
 
+  firmware:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.2.0
+      - run: pip install platformio==6.1.18
+      - run: bun install --frozen-lockfile
+      - run: bunx playwright install --with-deps chromium
+      - name: Native firmware tests
+        run: bun run firmware:test
+      - name: ESP32 firmware build
+        run: bun run firmware:build
+      - name: Offline dashboard tests
+        run: bun run firmware:test:web
+
   gitleaks:
     runs-on: ubuntu-latest
     permissions:

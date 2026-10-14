@@ -21,6 +21,11 @@ for (const stagedPath of stagedPaths) assertExplicitFile(stagedPath);
 
 const testPaths = new Set<string>();
 for (const stagedPath of stagedPaths) {
+	// Fixtures/specs Playwright do firmware: validados via `firmware:test:web`,
+	// nunca via `bun test` (o runner Bun quebra ao importar `@playwright/test`).
+	if (stagedPath.includes("apps/firmware/web-tests/")) {
+		continue;
+	}
 	if (/\.(test|spec)\.[cm]?[jt]sx?$/.test(stagedPath)) {
 		if (existsSync(stagedPath)) testPaths.add(stagedPath);
 		continue;
