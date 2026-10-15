@@ -1,12 +1,16 @@
 ---
-status: accepted
+status: superseded
 date: 2026-10-13
 builds-on: [ADR-0002, ADR-0004]
-superseded-by: null
+superseded-by: ADR-0007
 deciders: ["project maintainer"]
 ---
 
 # Serve painel offline por HTTP com polling
+
+> VERDADE ATUAL: superado pela ADR-0007. O painel é React+Vite servido do LittleFS com push
+> WebSocket na porta 81 (fallback para este polling HTTP); o HTML em PROGMEM segue apenas como
+> fallback quando o filesystem está vazio.
 
 ## Contexto e problema
 

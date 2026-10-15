@@ -10,13 +10,18 @@
 #if defined(ARDUINO) || defined(ESP32) || defined(ARDUINO_ARCH_ESP32)
 
 #include <Arduino.h>
+#include <LittleFS.h>
 #include <WebServer.h>
+#include <WebSocketsServer.h>
 #include <WiFi.h>
+
+#include <cstring>
 
 #include "api.h"
 #include "config.h"
 #include "dashboard.h"
 #include "snapshot.h"
+#include "ws_broadcast.h"
 
 namespace {
 
@@ -32,6 +37,8 @@ SnapshotStore g_snapshotStore;
 const onix::TimingConfig g_timing = onix::defaultTimingConfig();
 ApiRouter g_apiRouter(g_snapshotStore, g_timing, onix::DASHBOARD_HTML);
 WebServer g_server(onix::ONIX_HTTP_PORT);
+WebSocketsServer g_webSocket(onix::ONIX_WS_PORT);
+uint32_t g_lastWsBroadcastMs = 0;
 
 HttpMethod mapHttpMethod(HTTPMethod method) {
   switch (method) {
@@ -57,16 +64,96 @@ HttpMethod mapHttpMethod(HTTPMethod method) {
 // Traduz a requisição atual do WebServer em HttpRequest, consulta o ApiRouter e materializa
 // a HttpResponse: status, Content-Type, cabeçalhos (Cache-Control: no-store) e corpo —
 // inclusive as respostas 404/405, decididas pelo roteador, nunca aqui.
+void sendApiResponse(const HttpResponse& response) {
+  for (const auto& header : response.headers) {
+    g_server.sendHeader(header.name.c_str(), header.value.c_str());
+  }
+  g_server.send(response.status, response.contentType.c_str(), String(response.body.c_str()));
+}
+
+// Content-Type mínimo para os estáticos do frontend externo (web:stage -> data/).
+const char* contentTypeForPath(const char* path) {
+  const char* ext = strrchr(path, '.');
+  if (ext == nullptr) {
+    return "application/octet-stream";
+  }
+  if (strcmp(ext, ".html") == 0) return "text/html; charset=utf-8";
+  if (strcmp(ext, ".css") == 0) return "text/css; charset=utf-8";
+  if (strcmp(ext, ".js") == 0) return "application/javascript; charset=utf-8";
+  if (strcmp(ext, ".json") == 0) return "application/json";
+  if (strcmp(ext, ".svg") == 0) return "image/svg+xml";
+  if (strcmp(ext, ".png") == 0) return "image/png";
+  if (strcmp(ext, ".ico") == 0) return "image/x-icon";
+  return "application/octet-stream";
+}
+
+// Tenta servir um arquivo do LittleFS; retorna false se não existir ou não abrir.
+// Rejeita ".." para não escapar do filesystem.
+bool tryServeLittleFS(const char* path) {
+  if (strstr(path, "..") != nullptr) {
+    return false;
+  }
+  if (!LittleFS.exists(path)) {
+    return false;
+  }
+  File file = LittleFS.open(path, "r");
+  if (!file) {
+    return false;
+  }
+  g_server.streamFile(file, contentTypeForPath(path));
+  file.close();
+  return true;
+}
+
 void handleWithApiRouter() {
   HttpRequest request;
   request.method = mapHttpMethod(g_server.method());
   request.path = g_server.uri().c_str();
 
-  const HttpResponse response = g_apiRouter.handle(request);
-  for (const auto& header : response.headers) {
-    g_server.sendHeader(header.name.c_str(), header.value.c_str());
+  // GET / prefere o bundle externo (/index.html via web:stage); sem o arquivo, cai no
+  // dashboard.h embarcado via ApiRouter (fallback offline, nunca removido).
+  if (request.method == HttpMethod::Get && request.path == "/") {
+    if (tryServeLittleFS("/index.html")) {
+      return;
+    }
   }
-  g_server.send(response.status, response.contentType.c_str(), String(response.body.c_str()));
+
+  const HttpResponse response = g_apiRouter.handle(request);
+  // Demais estáticos do frontend externo quando existirem; senão, vale o 404 do roteador.
+  // /api/data nunca chega aqui como arquivo: o ApiRouter responde 200 antes.
+  if (response.status == 404 && request.method == HttpMethod::Get && request.path != "/") {
+    if (tryServeLittleFS(request.path.c_str())) {
+      return;
+    }
+  }
+  sendApiResponse(response);
+}
+
+// Eventos do WebSocket: no CONNECT envia o snapshot atual só ao recém-chegado (mesmo JSON
+// de GET /api/data, sem duplicar serialização); o broadcast periódico está em
+// maybeBroadcastWs(). Desconexões/frames não exigem ação.
+void onWsEvent(uint8_t num, WStype_t type, uint8_t* /*payload*/, size_t /*length*/) {
+  if (type == WStype_CONNECTED) {
+    const std::string json = g_apiRouter.buildDataJson();
+    g_webSocket.sendTXT(num, json.c_str());
+    g_lastWsBroadcastMs = millis();
+    Serial.printf("[onix] WS cliente #%u conectado\n", static_cast<unsigned>(num));
+  } else if (type == WStype_DISCONNECTED) {
+    Serial.printf("[onix] WS cliente #%u desconectado\n", static_cast<unsigned>(num));
+  }
+}
+
+// Broadcast a cada ONIX_WS_BROADCAST_MS SOMENTE com clientes conectados; throttle por
+// millis() (ws_broadcast.h), sem delay — nunca bloqueia o loop().
+void maybeBroadcastWs() {
+  const bool hasClients = g_webSocket.connectedClients(false) > 0;
+  if (!onix::shouldBroadcast(millis(), g_lastWsBroadcastMs, onix::ONIX_WS_BROADCAST_MS,
+                             hasClients, false)) {
+    return;
+  }
+  const std::string json = g_apiRouter.buildDataJson();
+  g_webSocket.broadcastTXT(json.c_str());
+  g_lastWsBroadcastMs = millis();
 }
 
 // Task OBD única (ADR-0004): ÚNICA produtora do SnapshotStore; HTTP só copia.
@@ -104,13 +191,29 @@ void setup() {
   Serial.printf("[onix] SoftAP '%s' canal %u | IP efetivo: %s\n", onix::ONIX_AP_SSID,
                 static_cast<unsigned>(onix::ONIX_AP_CHANNEL), effectiveIp.toString().c_str());
 
+  // LittleFS (frontend externo via web:stage -> data/): sem /index.html, GET / usa o
+  // dashboard.h embarcado (fallback em handleWithApiRouter). Falha na montagem é logada;
+  // o HTTP segue de pé com o fallback.
+  if (!LittleFS.begin()) {
+    Serial.println("[onix] LittleFS: falha ao montar; usando fallback embarcado");
+  } else {
+    Serial.println("[onix] LittleFS montado");
+  }
+
   // Rotas em HTTP_ANY (padrão do on(uri, fn)): o handler é chamado para QUALQUER método e o
-  // ApiRouter responde 405 para não-GET; rotas desconhecidas caem em onNotFound -> 404.
+  // ApiRouter responde 405 para não-GET; rotas desconhecidas caem em onNotFound -> 404
+  // (ou estático do LittleFS, se existir).
   g_server.on(onix::API_ROUTE_ROOT, handleWithApiRouter);
   g_server.on(onix::API_ROUTE_DATA, handleWithApiRouter);
   g_server.onNotFound(handleWithApiRouter);
   g_server.begin();
   Serial.printf("[onix] HTTP na porta %u\n", static_cast<unsigned>(onix::ONIX_HTTP_PORT));
+
+  g_webSocket.begin();
+  g_webSocket.onEvent(onWsEvent);
+  Serial.printf("[onix] WebSocket na porta %u (broadcast a cada %lu ms)\n",
+                static_cast<unsigned>(onix::ONIX_WS_PORT),
+                static_cast<unsigned long>(onix::ONIX_WS_BROADCAST_MS));
 
   // Task OBD única, pinada ao núcleo 0 (loopTask/WiFi do Arduino vivem no 1/0); stack e
   // prioridade vêm de config.h. Falha na criação é logada; o HTTP segue de pé.
@@ -124,7 +227,8 @@ void setup() {
 
 void loop() {
   g_server.handleClient();  // não bloqueia: a coleta OBD pertence exclusivamente à task
-  delay(1);                 // cede fatia ao IDLE/watchdog entre iterações
+  g_webSocket.loop();       // idem: bombeia frames sem bloquear
+  maybeBroadcastWs();       // throttle por millis(), só com clientes; sem delay
 }
 
 #else

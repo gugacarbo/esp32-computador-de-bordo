@@ -24,15 +24,19 @@ words:
   - gugacarbo
   - headless
   - knip
+  - littlefs
   - OBDII
   - onix
   - outdir
   - Playwright
+  - PROGMEM
   - prettier
   - pytest
   - serialização
+  - singlefile
   - supabase
   - WROOM
   - venv
   - ensurepip
   - webtests
+  - uploadfs

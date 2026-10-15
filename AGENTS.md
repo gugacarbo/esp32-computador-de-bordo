@@ -16,7 +16,7 @@ casa-standard-ref: 7cdb964c54fe0fa0f2c6a4b7e175d09cf5f72749
 ## Contexto em 5 linhas
 
 Monorepo Bun para um computador de bordo ESP32, em desenvolvimento.
-O app atual é TypeScript executado por Bun e vive em `apps/computador-de-bordo/`.
+O painel web é React+Vite e vive em `apps/web/` (bundle servido pelo ESP32 via LittleFS).
 Bibliotecas compartilhadas ficam em `packages/` quando houver mais de um consumidor.
 O firmware PlatformIO vive em `apps/firmware/`; o ensaio físico no veículo ainda é pendente.
 
@@ -25,7 +25,7 @@ O firmware PlatformIO vive em `apps/firmware/`; o ensaio físico no veículo ain
 - Workspaces nativos do Bun usam os padrões `apps/*` e `packages/*`; `bun.lock` fica na raiz.
 - Apps têm manifesto próprio; mantenha ferramentas comuns e scripts agregadores na raiz.
 - Desenvolvimento e checks locais usam Bun 1.2+; CI roda no GitHub Actions com Bun e Node 22.
-- O app atual roda no host Bun. O firmware compila para o ESP32 DOIT, mas não há ensaio físico, serviço externo ou infraestrutura de produção.
+- O app web roda no host Bun (dev) e no ESP32 via LittleFS (deploy). O firmware compila para o ESP32 DOIT, mas não há ensaio físico, serviço externo ou infraestrutura de produção.
 - Não há banco de dados nem segredos obrigatórios. `NODE_ENV` é opcional e aceita `development`, `test` ou `production`.
 - Nunca versione `.env`; use `.env.example` como referência sem valores secretos.
 
@@ -60,7 +60,9 @@ bun run firmware:test:web
 
 ## Como deployar
 
-Não há destino nem processo de deploy configurado.
+Painel web no ESP32 (placa via USB): `bun run web:deploy --port /dev/ttyUSB0`
+(build web + stage p/ LittleFS + build firmware + `uploadfs` + `upload`).
+Somente validação local sem placa: `bun scripts/web-deploy.mjs --build-only`.
 
 ## Git & PRs
 
@@ -71,7 +73,7 @@ Não há destino nem processo de deploy configurado.
 ## Gotchas
 
 - Use `bunx` para CLIs locais; `bun install --frozen-lockfile` confere o lockfile canônico `bun.lock`.
-- Painel do firmware: specs Playwright reais em `apps/firmware/web-tests/` (`bun run firmware:test:web`, config própria `playwright.firmware.config.ts`). O `test:e2e` da raiz segue sem specs do app Bun.
+- Painel do firmware: specs Playwright reais em `apps/firmware/web-tests/` (`bun run firmware:test:web`, config própria `playwright.firmware.config.ts`) cobrem o HTML legado de `dashboard.h` (fallback quando o LittleFS está vazio). O `test:e2e` da raiz segue sem specs do app web (`apps/web/tests/e2e/`).
 - `pio` não está no PATH do host: use `.venv/bin/pio` ou exporte `PATH=$PWD/.venv/bin:$PATH` antes dos scripts `firmware:*`. Os testes web rodam sob Node, não Bun (probe registrado `Bun.serve` indisponível no runner).
 - `spell:fix` não altera arquivos: CSpell reporta palavras para revisão manual.
 - `bun run build`, `typecheck` e `test` delegam aos workspaces com filtros Bun; cada novo workspace deve declarar esses scripts.
@@ -79,12 +81,12 @@ Não há destino nem processo de deploy configurado.
 
 ## Mapa do repositório
 
-| Caminho                     | Conteúdo                                                                       |
-| --------------------------- | ------------------------------------------------------------------------------ |
-| `apps/computador-de-bordo/` | App Bun/TypeScript atual, testes unitários e configuração TS local             |
-| `apps/firmware/`            | Firmware PlatformIO do ESP32: OBD, API, painel offline, testes nativos e web   |
-| `packages/`                 | Pacotes compartilhados; crie um workspace quando houver consumidores reais     |
-| raiz                        | Workspaces Bun, lockfile, ferramentas, scripts globais, CI e documentação CASA |
+| Caminho          | Conteúdo                                                                                                |
+| ---------------- | ------------------------------------------------------------------------------------------------------- |
+| `apps/web/`      | Painel React+Vite (Tailwind/shadcn mínimo, WS porta 81 + fallback HTTP), testes Bun e stage p/ LittleFS |
+| `apps/firmware/` | Firmware PlatformIO do ESP32: OBD, API, painel LittleFS + WS, testes nativos e web                      |
+| `packages/`      | Pacotes compartilhados; crie um workspace quando houver consumidores reais                              |
+| raiz             | Workspaces Bun, lockfile, ferramentas, scripts globais, CI e documentação CASA                          |
 
 ## Mapa de contexto
 

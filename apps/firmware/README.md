@@ -40,6 +40,10 @@ pio run -d apps/firmware -e esp32doit-devkit-v1 --target upload --upload-port /d
 pio device monitor --baud 115200 --port /dev/ttyUSB0
 ```
 
+Para publicar o painel React (`apps/web`) junto com o firmware em um comando só,
+prefira na raiz do repo `bun run web:deploy --port /dev/ttyUSB0` (build web + stage
+p/ LittleFS + build + `uploadfs` + `upload`).
+
 A porta acima é um exemplo: confirme a porta real antes de gravar. Alimente por USB durante o MVP; instalação elétrica automotiva permanente não está incluída.
 
 Conecte o Android à rede `Onix-MVP` e abra `http://192.168.4.1`. A configuração deve seguir a SPEC-0002; o endereço efetivo é informado pelo Serial. Aceite permanecer na rede sem internet quando o Android solicitar.

@@ -51,12 +51,12 @@
     "path": "docs/adr/0005-serve-painel-offline-por-http-com-polling.md",
     "layer": "adr",
     "title": "Serve painel offline por HTTP com polling",
-    "status": "accepted",
+    "status": "superseded",
     "builds-on": [
       "ADR-0002",
       "ADR-0004"
     ],
-    "superseded-by": null,
+    "superseded-by": "ADR-0007",
     "implemented-by": []
   },
   {
@@ -67,6 +67,20 @@
     "status": "accepted",
     "builds-on": [
       "ADR-0002"
+    ],
+    "superseded-by": null,
+    "implemented-by": []
+  },
+  {
+    "id": "ADR-0007",
+    "path": "docs/adr/0007-serve-painel-react-por-littlefs-com-websocket.md",
+    "layer": "adr",
+    "title": "Serve painel React por LittleFS com WebSocket",
+    "status": "accepted",
+    "builds-on": [
+      "ADR-0004",
+      "ADR-0005",
+      "ADR-0006"
     ],
     "superseded-by": null,
     "implemented-by": []
@@ -106,10 +120,18 @@
     "title": "Exibe o painel offline no Android",
     "status": "accepted",
     "builds-on": [
-      "ADR-0005",
+      "ADR-0007",
       "SPEC-0002"
     ],
     "superseded-by": null,
-    "implemented-by": []
+    "implemented-by": [
+      "apps/web/src/App.tsx",
+      "apps/web/src/hooks/useTelemetry.ts",
+      "apps/web/src/lib/envelope.ts",
+      "apps/web/src/lib/source.ts",
+      "apps/firmware/src/main.cpp",
+      "apps/firmware/include/ws_broadcast.h",
+      "scripts/web-deploy.mjs"
+    ]
   }
 ]

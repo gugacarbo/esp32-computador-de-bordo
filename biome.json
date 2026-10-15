@@ -11,6 +11,7 @@
 			"**/*.stories.tsx",
 			"**/index.html",
 			"**/vite.config.ts",
+			"!**/dist",
 			"!**/test-results",
 			"!**/playwright-report",
 			"!**/.vitest-coverage*",

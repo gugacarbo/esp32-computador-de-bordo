@@ -97,9 +97,12 @@ class ApiRouter {
   const SnapshotStore& store() const { return store_; }
   const TimingConfig& timing() const { return timing_; }
 
- private:
+  // Mesmo JSON de GET /api/data, reutilizado pelo broadcast WebSocket (porta 81):
+  // copia o snapshot, libera o mutex e só então serializa (ADR-0004). Público para não
+  // duplicar serialização em main.cpp.
   std::string buildDataJson() const;
 
+ private:
   const SnapshotStore& store_;
   const TimingConfig& timing_;
   const char* dashboardHtml_;

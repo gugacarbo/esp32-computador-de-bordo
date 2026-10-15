@@ -5,9 +5,9 @@
 			"entry": ["scripts/**/*.ts"],
 			"project": ["scripts/**/*.ts"]
 		},
-		"apps/computador-de-bordo": {
-			"entry": ["src/index.ts"],
-			"project": ["src/**/*"]
+		"apps/web": {
+			"project": ["src/**/*", "scripts/**/*"],
+			"ignoreExportsUsedInFile": true
 		}
 	},
 	"ignore": [],

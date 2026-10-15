@@ -1,8 +1,15 @@
 ---
 status: accepted
 date: 2026-10-13
-builds-on: [ADR-0005, SPEC-0002]
-implemented-by: []
+builds-on: [ADR-0007, SPEC-0002]
+implemented-by:
+  - apps/web/src/App.tsx
+  - apps/web/src/hooks/useTelemetry.ts
+  - apps/web/src/lib/envelope.ts
+  - apps/web/src/lib/source.ts
+  - apps/firmware/src/main.cpp
+  - apps/firmware/include/ws_broadcast.h
+  - scripts/web-deploy.mjs
 ---
 
 # Exibe o painel offline no Android
@@ -12,17 +19,20 @@ implemented-by: []
 Exibir o estado do Onix no navegador Android conectado ao Wi-Fi do ESP32, com interface simples,
 responsiva e totalmente offline. A página apresenta dados já coletados; não controla o veículo.
 
-O painel está implementado em `apps/firmware/include/dashboard.h` (HTML/CSS/JS locais em literal
-bruto) e validado por Playwright contra esse HTML real; comandos e cobertura estão em Verificação.
-O ensaio integrado em navegador Android físico permanece pendente.
+O painel é o app React de `apps/web/` (Vite singlefile, Tailwind/shadcn mínimo), com stage do
+`dist/index.html` para `apps/firmware/data/` e entrega via LittleFS; o HTML legado em
+`apps/firmware/include/dashboard.h` segue como fallback quando o filesystem está vazio. O app
+recebe o envelope da SPEC-0002 por WebSocket (`ws://` + IP do ESP32 + `:81/ws`) com fallback
+para polling `GET /api/data`. O painel legado continua validado por Playwright contra o HTML
+real de `dashboard.h`; o ensaio integrado em navegador Android físico permanece pendente.
 
 ## Fluxo
 
 1. O usuário alimenta o ESP32 por USB durante o teste e conecta o Android à rede definida na SPEC-0002.
-2. Abre o endereço local no navegador; o HTML é carregado sem depender do scanner.
-3. A página mostra identidade, cartões e estado inicial enquanto busca o primeiro snapshot.
-4. O navegador solicita `GET /api/data` e atualiza os textos com valores e estados.
-5. Uma falha HTTP ou OBD muda a apresentação; a página permanece aberta e tenta recuperar.
+2. Abre o endereço local no navegador; o HTML vem do LittleFS (ou do fallback embarcado).
+3. A página mostra identidade, cartões e estado inicial enquanto abre o WebSocket.
+4. O ESP32 envia o envelope por WS a cada 500 ms; sem WS, o app consulta `GET /api/data` em polling de 500 ms e atualiza textos com valores e estados.
+5. Uma falha de transporte ou OBD muda a apresentação; a página permanece aberta e tenta recuperar.
 
 ## Contrato
 
@@ -36,7 +46,8 @@ O ensaio integrado em navegador Android físico permanece pendente.
 - Identificar tensão como `Tensão do adaptador` ou `Tensão da ECU` pelo campo `source`.
 - Usar organização que caiba em telas de celular sem rolagem horizontal; validar larguras de 320 e
   360 pixels CSS e uma tela maior. Não exigir gráficos, instrumentos animados ou tela de configuração.
-- HTML/CSS/JavaScript locais, sem fontes, imagens, scripts ou estilos de CDN.
+- HTML/CSS/JavaScript gerados por `apps/web/` (bundle único, sem fontes, imagens, scripts ou estilos de CDN) e orçamento de 600 KB para caber no LittleFS junto ao firmware.
+- Sem `/index.html` no LittleFS, `GET /` serve o painel legado embarcado (`dashboard.h`): degradação conhecida, mesmos estados.
 - Os estados não dependem somente de cor: têm texto, contraste legível e associação com o sensor.
 - A interface não contém botão de apagar erros, executar comandos ou escrever na ECU.
 
@@ -71,9 +82,11 @@ campos obrigatórios é resposta inválida e segue o tratamento de falha HTTP.
 
 ### Atualização
 
-- Intervalo web inicial de aproximadamente 500 ms, independente das taxas de coleta OBD.
+- Push WebSocket a cada 500 ms, somente com clientes conectados; o firmware envia o mesmo JSON de `GET /api/data`, sem canal de escrita na ECU.
+- Fallback polling `GET /api/data` a cada 500 ms quando o WS está indisponível, independente das taxas de coleta OBD.
 - No máximo uma requisição em andamento; agendar a próxima após a anterior terminar, sem rajada para
-  compensar atrasos. O navegador encerra uma requisição que ultrapasse seu timeout configurado.
+  compensar atrasos. O app encerra uma requisição que ultrapasse seu timeout configurado (4 s) e aplica watchdog de 4 s sem mensagem WS.
+- Reconexão do WS com backoff de 1 s a 3 s; continuar tentando durante falhas e recuperar sem recarregar a página.
 - Aplicar uma resposta somente após conferir a estrutura necessária; falha de parsing não apaga silenciosamente a tela.
 - Continuar tentando durante falhas e recuperar sem recarregar a página.
 - Não acumular intervalos, requisições ou listeners ao alternar a aba ou recuperar a conexão.
@@ -94,6 +107,7 @@ campos obrigatórios é resposta inválida e segue o tratamento de falha HTTP.
 | 9   | O celular não tem internet                                      | Carregar toda a interface pela origem local, sem requisições externas.           |
 | 10  | A tensão é obtida por uma origem diferente                      | Usar a identificação recebida da API, sem assumir que é tensão da bateria.       |
 | 11  | A aba volta após ficar suspensa pelo Android                    | Retomar consulta sem rajada; só apresentar dados como atuais após resposta nova. |
+| 12  | O LittleFS está sem `index.html` (stage/uploadfs pendente)      | Servir o painel legado embarcado em `GET /`, com os mesmos estados.              |
 
 ## Questões em aberto
 
@@ -117,6 +131,7 @@ a última (ensaio integrado com API e navegador Android no Wi-Fi do ESP32) perma
 | Testes de polling com resposta lenta, falha, JSON inválido e recuperação | 6–7, 11        | No máximo uma requisição; recuperação automática e ausência de timers duplicados. |
 | Testes de layout em navegador a 320 e 360 pixels e tela maior            | 8              | Não há overflow horizontal; cartões e mensagens permanecem acessíveis.            |
 | Teste de carregamento com acesso externo bloqueado                       | 9              | A interface funciona e todas as requisições têm a origem local do dispositivo.    |
+| Fallback com LittleFS vazio                                              | 12             | `GET /` responde 200 com o painel legado quando `data/index.html` não existe.     |
 | Teste integrado com API e ensaio no navegador Android real               | 1–11           | Estados web e OBD distinguíveis; leituras e reconexão observadas no dispositivo.  |
 
 O teste integrado pode reutilizar a evidência de API da SPEC-0002 quando os casos de interface forem
@@ -144,9 +159,24 @@ real extraído de `apps/firmware/include/dashboard.h`:
   Playwright deste repositório executa em Node (probe registrou `Bun.serve` indisponível).
 
 O ensaio integrado com API real e navegador Android via Wi-Fi do ESP32 (última linha da matriz)
-permanece pendente; `implemented-by` segue vazio até essa evidência.
+permanece pendente; o `implemented-by` acima cobre host + compilação, não o ensaio em hardware.
+
+Evidência de 2026-10-15 no host de desenvolvimento (painel React + WS + LittleFS):
+
+- `bun run build` em `apps/web/`: `dist/index.html` com 267 KB (83 KB gz), bundle único sem
+  requisições externas, dentro do orçamento de 600 KB.
+- `bun test` em `apps/web/`: 21 testes GREEN (`envelope.test.ts`: parsing/validação do envelope,
+  estados do painel e formatação; `source.test.ts`: URL do WS, host e backoff).
+- `bun run firmware:test` (`pio test -e native`): 32 casos GREEN, incluindo `test_ws`
+  (throttle do broadcast, intervalo, dirty imediato, wraparound de `millis`).
+- `bun run firmware:build` (`pio run -e esp32doit-devkit-v1`): SUCCESS (RAM 14,3%, Flash 65,1%).
+- `bun run firmware:test:web`: 17 testes GREEN — o painel legado de `dashboard.h` segue válido
+  como fallback do caso 12.
+- `bun scripts/web-deploy.mjs --build-only`: exit 0 — build web + stage p/ `firmware/data` +
+  build do firmware sem placa.
 
 ## Fora do escopo
 
 Aplicativo Android nativo, instalação PWA, captive portal, gráficos, histórico, alertas, autenticação
-de aplicação, serviço remoto e WebSocket.
+de aplicação e serviço remoto. O WebSocket é somente push do snapshot: sem botões ou comandos
+de escrita na ECU.

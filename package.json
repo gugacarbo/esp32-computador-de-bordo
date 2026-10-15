@@ -11,7 +11,8 @@
 		"bun": ">=1.2.0"
 	},
 	"scripts": {
-		"dev": "bun run --filter '@esp32-computador-de-bordo/app' dev",
+		"dev": "bun run --filter '@esp32-computador-de-bordo/web' dev",
+		"web:deploy": "bun scripts/web-deploy.mjs",
 		"build": "bun run --filter '*' build",
 		"typecheck": "tsc --noEmit -p tsconfig.tools.json && bun run --filter '*' typecheck",
 		"test": "bun run --filter '*' test",

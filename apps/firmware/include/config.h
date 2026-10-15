@@ -60,6 +60,8 @@ constexpr uint8_t ONIX_AP_CHANNEL = 1;
 constexpr uint8_t ONIX_AP_MAX_CLIENTS = 4;
 constexpr bool ONIX_AP_HIDDEN = false;
 constexpr uint16_t ONIX_HTTP_PORT = 80;
+constexpr uint16_t ONIX_WS_PORT = 81;
+constexpr uint32_t ONIX_WS_BROADCAST_MS = 500;
 constexpr uint32_t ONIX_SERIAL_BAUD = 115200;
 
 // Cabeçalhos do contrato HTTP (SPEC-0002 §Rede e recursos).

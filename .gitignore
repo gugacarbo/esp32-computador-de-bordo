@@ -8,4 +8,6 @@ playwright/.cache/
 !.env.example
 .venv/
 apps/firmware/.pio/
+apps/firmware/data/*.html
+apps/firmware/data/*.gz
 .platformio/
