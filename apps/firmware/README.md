@@ -31,6 +31,14 @@ bun run firmware:test:web
 
 Esses comandos não substituem os checks Bun da raiz. O job `firmware` do CI executa os três separadamente. Uma compilação bem-sucedida não comprova conexão Bluetooth, leitura do veículo nem estabilidade do rádio.
 
+## Configuração do scanner
+
+A identidade do ELM327 fica em `include/config.h`: `ONIX_BT_DEVICE_NAME` (padrão `OBDII`), `ONIX_BT_DEVICE_PIN` (padrão `1234`; muitos clones usam `0000`) e `ONIX_BT_DEVICE_MAC` (vazio conecta pelo nome). O transporte é Bluetooth Classic (SPP): adaptadores "ELM327" que só expõem BLE não funcionam. `ONIX_OBD_PROTOCOL` usa `'0'` (busca automática, até 30 s); `'6'` (ISO 15765-4 CAN 11 bit 500 kbps) pula a busca no Onix 2019.
+
+O firmware envia apenas Serviço 01 (leitura de PIDs) e `AT RV`; nunca apaga códigos de falha nem escreve na ECU. A task OBD roda no núcleo 1 porque a inicialização do ELMduino faz espera ativa e o watchdog do ESP32 reinicia a placa se o idle do núcleo 0 ficar sem CPU por 5 s.
+
+A tabela de partição é `huge_app.csv` (Bluetooth Classic + Wi-Fi não cabem na partição de app padrão). Ao trocar de tabela, grave também o LittleFS (`bun run web:deploy` já executa `uploadfs`).
+
 ## Gravação e diagnóstico
 
 Com a placa conectada por USB à máquina que executa PlatformIO:

@@ -65,6 +65,7 @@ void ObdSession::publish() {
 
 void ObdSession::recordEcuOk(uint64_t now) {
   lastEcuOkMs_ = now;
+  snapshot_.lastEcuResponseMs = now;  // a API deriva a saúde a partir deste carimbo (SPEC-0002)
   snapshot_.hasEcuResponse = true;
 }
 
@@ -141,6 +142,7 @@ void ObdSession::invalidateSession(uint64_t now, const char* reason) {
     mapAttempts_[i] = 0;
   }
   lastEcuOkMs_ = 0;
+  snapshot_.lastEcuResponseMs = 0;
   // Perda de transporte permite tentativa imediata; o backoff crescente arma-se se a
   // reconexão falhar (SPEC-0001 casos 6–7: recolocar o scanner retoma sem espera artificial).
   armAction(now, 0);

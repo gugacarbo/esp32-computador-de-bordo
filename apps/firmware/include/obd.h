@@ -4,9 +4,8 @@
 // publicação entram por injeção. `runObdTask` é o loop de produção do ESP32 e depende de
 // BluetoothSerial + ELMduino, ambos usados por uma única task (ADR-0004).
 //
-// As constantes de identidade Bluetooth abaixo são provisórias: o mantenedor deve confirmá-las e
-// centralizá-las em config.h (SPEC-0001 §Configuração). Até lá, obd.h é a origem única deste
-// módulo; main.cpp não deve duplicá-las.
+// A identidade Bluetooth (nome, PIN, MAC, nome local e timeouts) vem de config.h
+// (SPEC-0001 §Configuração); este módulo a consome por ObdConfig e não a redefine.
 #pragma once
 
 #include <array>
@@ -20,13 +19,6 @@
 
 namespace onix {
 
-// Identidade do scanner (SPEC-0001 §Configuração; ADR-0003 não presume nome nem PIN universais).
-constexpr char ONIX_BT_DEVICE_NAME[] = "OBDII";
-constexpr char ONIX_BT_DEVICE_PIN[] = "1234";
-constexpr char ONIX_BT_DEVICE_MAC[] = "";  // vazio = conectar pelo nome; "AA:BB:CC:DD:EE:FF" quando conhecido
-constexpr char ONIX_BT_LOCAL_NAME[] = "Onix-CB";
-constexpr uint32_t ONIX_BT_CONNECT_TIMEOUT_MS = 15000;
-constexpr uint32_t ONIX_BT_INIT_TIMEOUT_MS = 30000;  // ADR-0004: busca automática de protocolo
 constexpr uint16_t ONIX_OBD_PAYLOAD_LEN = 128;
 constexpr uint16_t ONIX_OBD_AT_TIMEOUT_MS = 1000;
 constexpr uint32_t ONIX_OBD_IDLE_WAIT_MS = 200;  // teto da espera cooperativa sem trabalho
@@ -43,7 +35,7 @@ struct SensorPidSpec {
 
 // Um Serviço 01 por sensor, na ordem de sensorIndex (SPEC-0001 §Sensores).
 constexpr std::array<SensorPidSpec, SENSOR_COUNT> OBD_SENSOR_PIDS = {{
-    {SensorId::Rpm, 0x0C, 2, 1.0, 0.0},
+    {SensorId::Rpm, 0x0C, 2, 0.25, 0.0},  // (256A+B)/4 rpm (SAE J1979)
     {SensorId::Speed, 0x0D, 1, 1.0, 0.0},
     {SensorId::Coolant, 0x05, 1, 1.0, -40.0},
     {SensorId::Throttle, 0x11, 1, 100.0 / 255.0, 0.0},

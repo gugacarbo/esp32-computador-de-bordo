@@ -11,3 +11,6 @@ apps/firmware/.pio/
 apps/firmware/data/*.html
 apps/firmware/data/*.gz
 .platformio/
+
+# Artefatos do Playwright MCP (capturas e logs locais)
+.playwright-mcp/

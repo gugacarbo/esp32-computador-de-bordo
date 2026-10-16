@@ -8,5 +8,6 @@ void runSessionSuite();
 void runRecoverySuite();
 void runSchedulerSuite();
 void runConfigSuite();
+void runIntegrationSuite();
 
 }  // namespace onix::test

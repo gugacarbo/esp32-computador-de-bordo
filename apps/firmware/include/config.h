@@ -74,8 +74,22 @@ constexpr char ONIX_HEADER_CACHE_CONTROL[] = "Cache-Control";
 // Origem padrão da tensão (SPEC-0001: `AT RV`; PID 42 exige configuração explícita).
 constexpr VoltageSource ONIX_DEFAULT_VOLTAGE_SOURCE = VoltageSource::Adapter;
 
-// Task única de aplicação para OBD (ADR-0004). Valores apenas informativos: a task é criada em main.cpp.
+// Identidade do scanner Bluetooth (SPEC-0001 §Configuração; ADR-0003 não presume nome nem PIN universais).
+constexpr char ONIX_BT_DEVICE_NAME[] = "OBDII";
+constexpr char ONIX_BT_DEVICE_PIN[] = "1234";
+constexpr char ONIX_BT_DEVICE_MAC[] = "";  // vazio = conectar pelo nome; "AA:BB:CC:DD:EE:FF" quando conhecido
+constexpr char ONIX_BT_LOCAL_NAME[] = "Onix-CB";
+constexpr uint32_t ONIX_BT_CONNECT_TIMEOUT_MS = 15000;
+constexpr uint32_t ONIX_BT_INIT_TIMEOUT_MS = 30000;  // ADR-0004: busca automática de protocolo
+
+// Protocolo do ELM327: '0' = busca automática; '6' = ISO 15765-4 CAN 11 bit 500 kbps (Onix 2019) pula a busca.
+constexpr char ONIX_OBD_PROTOCOL = '0';
+
+// Task única de aplicação para OBD (ADR-0004). Usados por main.cpp na criação da task.
 constexpr uint32_t ONIX_OBD_TASK_STACK_SIZE = 8192;
 constexpr uint32_t ONIX_OBD_TASK_PRIORITY = 1;
+// Núcleo 1: o idle do núcleo 0 é vigiado pelo task WDT com panic (5 s) e o ELMduino faz busy-wait
+// sem yield na busca de protocolo.
+constexpr uint32_t ONIX_OBD_TASK_CORE = 1;
 
 }  // namespace onix

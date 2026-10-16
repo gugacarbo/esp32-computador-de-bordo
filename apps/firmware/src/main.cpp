@@ -20,6 +20,7 @@
 #include "api.h"
 #include "config.h"
 #include "dashboard.h"
+#include "obd.h"
 #include "snapshot.h"
 #include "ws_broadcast.h"
 
@@ -157,16 +158,11 @@ void maybeBroadcastWs() {
 }
 
 // Task OBD única (ADR-0004): ÚNICA produtora do SnapshotStore; HTTP só copia.
-// Scaffold cooperativo enquanto runObdTask() não existe em obd.cpp (fase RED): publica um
-// snapshot inicial indisponível e espera em ciclos curtos, sem bloquear o loop HTTP.
-// Quando runObdTask() for implementado (ou ObdSession::step() ganhar transporte real),
-// este corpo passa a chamar onix::runObdTask(store) ou step() cooperativo.
+// runObdTask() (obd_transport_esp32.cpp) é o loop de produção: BluetoothSerial + ELMduino e a
+// máquina ObdSession, que publica o snapshot a cada passo e espera o tempo sugerido pela sessão.
 void obdTask(void* parameter) {
   auto& store = *static_cast<SnapshotStore*>(parameter);
-  store.publish(onix::Snapshot{});  // estado inicial: sem BT, sem adapter, tudo unavailable
-  for (;;) {
-    vTaskDelay(1);  // ~200 ms cooperativo (ONIX_OBD_IDLE_WAIT_MS); sem depender de obd.h aqui
-  }
+  onix::runObdTask(store);
 }
 
 }  // namespace
@@ -215,11 +211,15 @@ void setup() {
                 static_cast<unsigned>(onix::ONIX_WS_PORT),
                 static_cast<unsigned long>(onix::ONIX_WS_BROADCAST_MS));
 
-  // Task OBD única, pinada ao núcleo 0 (loopTask/WiFi do Arduino vivem no 1/0); stack e
-  // prioridade vêm de config.h. Falha na criação é logada; o HTTP segue de pé.
+  // Task OBD única, pinada ao núcleo ONIX_OBD_TASK_CORE (1), longe do IDLE0. O task WDT do
+  // ESP32 vigia o IDLE0 (panic=y, 5 s): o ELMduino faz busy-wait de até 30 s durante a busca
+  // de protocolo (sendCommand_Blocking), o que travaria o IDLE0 e dispararia o reset. O loop
+  // HTTP/WebSocket fica no núcleo 1 ao lado da task OBD. Stack e prioridade vêm de config.h.
+  // Falha na criação é logada; o HTTP segue de pé.
   const BaseType_t created =
       xTaskCreatePinnedToCore(obdTask, "onix-obd", onix::ONIX_OBD_TASK_STACK_SIZE,
-                              &g_snapshotStore, onix::ONIX_OBD_TASK_PRIORITY, nullptr, 0);
+                              &g_snapshotStore, onix::ONIX_OBD_TASK_PRIORITY, nullptr,
+                              onix::ONIX_OBD_TASK_CORE);
   if (created != pdPASS) {
     Serial.println("[onix] falha ao criar a task OBD");
   }
