@@ -175,8 +175,14 @@ void LogBuffer::clear() {
 
 std::string serializeLogsJson(const std::vector<LogEntry>& entries, uint32_t dropped,
                               uint64_t uptimeMs) {
+  // Reserva pelo conteúdo real, não pelo pior caso: com o heap do ESP32 fragmentado (maior bloco
+  // ~18 KB com BT + Wi-Fi), 64 x 216 B de reserva fixa ficaria perto do limite.
+  std::size_t expected = 64;
+  for (const LogEntry& entry : entries) {
+    expected += 72 + entry.tag.size() + entry.message.size();
+  }
   std::string json;
-  json.reserve(64 + entries.size() * (ONIX_LOG_MESSAGE_MAX + 96));
+  json.reserve(expected);
   json += "{\"uptimeMs\":";
   json += std::to_string(uptimeMs);
   json += ",\"dropped\":";

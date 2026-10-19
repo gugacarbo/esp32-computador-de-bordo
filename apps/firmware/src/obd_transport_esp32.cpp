@@ -84,7 +84,7 @@ bool parseBtMac(const char* text, uint8_t out[6]) {
 }
 
 // Encaminha as linhas da sessão OBD ao log do firmware (ADR-0011) até o limite configurado
-// (Quiet < Transition < Verbose). O prefixo "[obd] " das linhas vira a tag.
+// (Quiet < Transition < Verbose). O prefixo "[obd] " ou "[bt] " das linhas vira a tag.
 class SerialLogSink : public ObdLogSink {
  public:
   explicit SerialLogSink(ObdLogLevel threshold) : threshold_(threshold) {}
@@ -93,13 +93,20 @@ class SerialLogSink : public ObdLogSink {
     if (line == nullptr || static_cast<int>(level) > static_cast<int>(threshold_)) {
       return;
     }
-    constexpr char kPrefix[] = "[obd] ";
-    const char* message =
-        std::strncmp(line, kPrefix, sizeof(kPrefix) - 1) == 0 ? line + sizeof(kPrefix) - 1 : line;
+    char tag[ONIX_LOG_TAG_MAX] = "obd";
+    const char* message = line;
+    const char* close = line[0] == '[' ? std::strchr(line, ']') : nullptr;
+    if (close != nullptr && close[1] == ' ' &&
+        static_cast<std::size_t>(close - line - 1) < sizeof(tag)) {
+      const std::size_t length = static_cast<std::size_t>(close - line - 1);
+      std::memcpy(tag, line + 1, length);
+      tag[length] = '\0';
+      message = close + 2;
+    }
     const LogLevel mapped = level == ObdLogLevel::Quiet        ? LogLevel::Warn
                             : level == ObdLogLevel::Transition ? LogLevel::Info
                                                                : LogLevel::Debug;
-    logf(mapped, "obd", "%s", message);
+    logf(mapped, tag, "%s", message);
   }
 
  private:
