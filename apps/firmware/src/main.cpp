@@ -182,17 +182,15 @@ void obdTask(void* parameter) {
 }
 
 // ArduinoOTA (ADR-0009): espota grava firmware (U_FLASH) no slot livre ou o LittleFS (U_SPIFFS).
-// Durante a gravação a task OBD fica suspensa para liberar CPU e rádio, e o LittleFS é
-// desmontado antes de ser sobrescrito. Sucesso reinicia a placa; erro retoma a task.
+// Durante a gravação a task OBD fica em pausa cooperativa (cancela a busca BT e libera o rádio),
+// e o LittleFS é desmontado antes de ser sobrescrito. Sucesso reinicia a placa; erro retoma a task.
 void setupOta() {
   ArduinoOTA.setHostname(onix::ONIX_OTA_HOSTNAME);
   ArduinoOTA.setPassword(onix::ONIX_OTA_PASSWORD);
   ArduinoOTA.setPort(onix::ONIX_OTA_PORT);
   ArduinoOTA.onStart([]() {
     const bool filesystem = ArduinoOTA.getCommand() == U_SPIFFS;
-    if (g_obdTaskHandle != nullptr) {
-      vTaskSuspend(g_obdTaskHandle);
-    }
+    onix::setObdPaused(true);
     if (filesystem) {
       LittleFS.end();
     }
@@ -201,9 +199,7 @@ void setupOta() {
   ArduinoOTA.onEnd([]() { ONIX_LOGW("ota", "concluída; reiniciando"); });
   ArduinoOTA.onError([](ota_error_t error) {
     ONIX_LOGE("ota", "falhou (erro %u)", static_cast<unsigned>(error));
-    if (g_obdTaskHandle != nullptr) {
-      vTaskResume(g_obdTaskHandle);
-    }
+    onix::setObdPaused(false);
   });
   ArduinoOTA.begin();
   ONIX_LOGI("ota", "porta %u", static_cast<unsigned>(onix::ONIX_OTA_PORT));

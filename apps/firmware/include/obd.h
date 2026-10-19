@@ -200,4 +200,9 @@ class ObdSession {
 // Não é chamado nos testes nativos: a máquina testável é ObdSession. main.cpp cria a task.
 void runObdTask(SnapshotStore& store);
 
+// Pausa cooperativa da task OBD (ESP32): com `true`, cancela a busca Bluetooth em andamento e a
+// task para de chamar a sessão no próximo passo, liberando o rádio para o Wi-Fi (OTA, ADR-0009).
+// Diferente de vTaskSuspend, a task nunca para segurando um mutex. Chamável de outra task.
+void setObdPaused(bool paused);
+
 }  // namespace onix

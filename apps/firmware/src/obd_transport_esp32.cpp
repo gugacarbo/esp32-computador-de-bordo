@@ -17,6 +17,9 @@
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
 
+#include "esp_gap_bt_api.h"
+
+#include <atomic>
 #include <cstdlib>
 #include <cstring>
 
@@ -135,8 +138,9 @@ class Elm327BtTransport : public ObdTransport {
 
   bool connect(uint32_t timeoutMs) override {
     // BluetoothSerial::connect() não aceita timeout: usa o prazo interno da biblioteca
-    // (READY_TIMEOUT ~10 s para a pilha, SCAN_TIMEOUT ~32 s para a descoberta/conexão).
-    // timeoutMs fica como teto documentado e não é aplicado aqui.
+    // (READY_TIMEOUT ~10 s para conectar pelo MAC). timeoutMs fica como teto documentado.
+    // connect(nome) não é usado: ele refaz uma busca de ~20 s a cada tentativa e, sem scanner por
+    // perto, o rádio passava a maior parte do tempo buscando e o SoftAP ficava fora do ar.
     (void)timeoutMs;
     if (!btStarted_) {
       if (!SerialBT.begin(String(ONIX_BT_LOCAL_NAME), true)) {  // modo master
@@ -158,7 +162,17 @@ class Elm327BtTransport : public ObdTransport {
       }
       return SerialBT.connect(mac);
     }
-    return SerialBT.connect(String(ONIX_BT_DEVICE_NAME));
+    if (!haveScannerMac_ || macFailures_ >= ONIX_BT_MAC_RETRIES) {
+      if (!discoverScanner()) {
+        return false;
+      }
+    }
+    if (SerialBT.connect(scannerMac_)) {
+      macFailures_ = 0;
+      return true;
+    }
+    ++macFailures_;
+    return false;
   }
 
   bool adapterInit(uint32_t timeoutMs) override {
@@ -226,6 +240,30 @@ class Elm327BtTransport : public ObdTransport {
   const char* protocol() const override { return protocol_; }
 
  private:
+  // Busca curta (ONIX_BT_DISCOVERY_MS) pelo nome configurado e guarda o MAC do scanner.
+  // Só funciona antes de qualquer connect(nome) — por isso o transporte nunca o chama.
+  bool discoverScanner() {
+    BTScanResults* results = SerialBT.discover(ONIX_BT_DISCOVERY_MS);
+    if (results == nullptr) {
+      ONIX_LOGW("bt", "busca indisponivel");
+      return false;
+    }
+    for (int i = 0; i < results->getCount(); ++i) {
+      BTAdvertisedDevice* device = results->getDevice(i);
+      if (device != nullptr && device->haveName() && device->getName() == ONIX_BT_DEVICE_NAME) {
+        std::memcpy(scannerMac_, *device->getAddress().getNative(), sizeof(scannerMac_));
+        haveScannerMac_ = true;
+        macFailures_ = 0;
+        ONIX_LOGI("bt", "scanner '%s' encontrado: %s", ONIX_BT_DEVICE_NAME,
+                  device->getAddress().toString().c_str());
+        return true;
+      }
+    }
+    ONIX_LOGI("bt", "scanner '%s' nao encontrado (%d dispositivos na busca)", ONIX_BT_DEVICE_NAME,
+              results->getCount());
+    return false;
+  }
+
   // Executa uma consulta não bloqueante do ELMduino até o fim ou até o prazo. `step` chama
   // processPID/batteryVoltage uma vez; `make` converte o valor em ObdReply quando Ok.
   template <typename Step, typename Make>
@@ -290,10 +328,26 @@ class Elm327BtTransport : public ObdTransport {
   ELM327 elm_;               // única instância do ELMduino; usada só pela task OBD
   bool btStarted_ = false;
   bool pending_ = false;     // consulta interrompida que ainda precisa ser drenada
+  uint8_t scannerMac_[6] = {0, 0, 0, 0, 0, 0};  // MAC achado pela busca (RAM; refeito no boot)
+  bool haveScannerMac_ = false;
+  uint8_t macFailures_ = 0;  // falhas seguidas ao conectar pelo MAC guardado
   char protocol_[24] = "";
 };
 
 }  // namespace
+
+namespace {
+std::atomic<bool> g_obdPaused{false};
+}  // namespace
+
+void setObdPaused(bool paused) {
+  g_obdPaused.store(paused);
+  if (paused) {
+    // connect(nome) pode estar no meio de uma busca de ~20 s; cancelar a encerra já. Sem a pilha
+    // BT ativa, a chamada só retorna erro.
+    esp_bt_gap_cancel_discovery();
+  }
+}
 
 void runObdTask(SnapshotStore& store) {
   static Elm327BtTransport transport;
@@ -310,6 +364,10 @@ void runObdTask(SnapshotStore& store) {
 
   uint64_t nextStackLogMs = monotonicUptimeMs() + kStackLogPeriodMs;
   for (;;) {
+    if (g_obdPaused.load()) {
+      vTaskDelay(pdMS_TO_TICKS(100));  // OTA em andamento: rádio livre para o Wi-Fi
+      continue;
+    }
     const uint32_t wait = session.step();  // no máximo uma operação bloqueante
     const TickType_t ticks = pdMS_TO_TICKS(wait);
     vTaskDelay(ticks > 0 ? ticks : 1);

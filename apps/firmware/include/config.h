@@ -95,6 +95,10 @@ constexpr char ONIX_BT_DEVICE_MAC[] = "";  // vazio = conectar pelo nome; "AA:BB
 constexpr char ONIX_BT_LOCAL_NAME[] = "Onix-CB";
 constexpr uint32_t ONIX_BT_CONNECT_TIMEOUT_MS = 15000;
 constexpr uint32_t ONIX_BT_INIT_TIMEOUT_MS = 30000;  // ADR-0004: busca automática de protocolo
+// Busca BT curta (múltiplo de 1,28 s) só para achar o MAC pelo nome; depois conecta direto pelo MAC.
+// A busca ocupa o rádio e derruba o SoftAP enquanto dura, por isso é curta e rara.
+constexpr uint32_t ONIX_BT_DISCOVERY_MS = 5120;
+constexpr uint8_t ONIX_BT_MAC_RETRIES = 3;  // falhas seguidas pelo MAC antes de buscar de novo
 
 // Protocolo do ELM327: '0' = busca automática; '6' = ISO 15765-4 CAN 11 bit 500 kbps (Onix 2019) pula a busca.
 constexpr char ONIX_OBD_PROTOCOL = '0';
