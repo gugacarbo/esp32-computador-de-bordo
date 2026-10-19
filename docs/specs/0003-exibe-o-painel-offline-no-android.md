@@ -1,13 +1,18 @@
 ---
 status: accepted
 date: 2026-10-13
-builds-on: [ADR-0007, SPEC-0002]
+builds-on: [ADR-0008, SPEC-0002]
 implemented-by:
   - apps/web/src/App.tsx
   - apps/web/src/hooks/useTelemetry.ts
   - apps/web/src/lib/envelope.ts
   - apps/web/src/lib/source.ts
   - apps/firmware/src/main.cpp
+  - apps/firmware/include/static_asset_policy.h
+  - apps/firmware/test/test_http/test_http.cpp
+  - apps/web/vite.config.ts
+  - apps/web/scripts/stage.mjs
+  - apps/web/src/build-assets.test.ts
   - apps/firmware/include/ws_broadcast.h
   - scripts/web-deploy.mjs
 ---
@@ -19,8 +24,8 @@ implemented-by:
 Exibir o estado do Onix no navegador Android conectado ao Wi-Fi do ESP32, com interface simples,
 responsiva e totalmente offline. A página apresenta dados já coletados; não controla o veículo.
 
-O painel é o app React de `apps/web/` (Vite singlefile, Tailwind/shadcn mínimo), com stage do
-`dist/index.html` para `apps/firmware/data/` e entrega via LittleFS; o HTML legado em
+O painel é o app React de `apps/web/` (Vite com assets separados, Tailwind/shadcn mínimo), staged
+em `apps/firmware/data/` e servido via LittleFS; o HTML legado em
 `apps/firmware/include/dashboard.h` segue como fallback quando o filesystem está vazio. O app
 recebe o envelope da SPEC-0002 por WebSocket (`ws://` + IP do ESP32 + `:81/ws`) com fallback
 para polling `GET /api/data`. O painel legado continua validado por Playwright contra o HTML
@@ -46,7 +51,9 @@ real de `dashboard.h`; o ensaio integrado em navegador Android físico permanece
 - Identificar tensão como `Tensão do adaptador` ou `Tensão da ECU` pelo campo `source`.
 - Usar organização que caiba em telas de celular sem rolagem horizontal; validar larguras de 320 e
   360 pixels CSS e uma tela maior. Não exigir gráficos, instrumentos animados ou tela de configuração.
-- HTML/CSS/JavaScript gerados por `apps/web/` (bundle único, sem fontes, imagens, scripts ou estilos de CDN) e orçamento de 600 KB para caber no LittleFS junto ao firmware.
+- HTML com CSS e JavaScript gerados como arquivos separados e versionados por `apps/web/`, sem fontes, imagens, scripts ou estilos de CDN. O build também gera variantes gzip para os assets; o servidor as entrega quando o cliente anuncia suporte a gzip e informa `Vary: Accept-Encoding`.
+- A resposta HTML usa `Cache-Control: no-cache`; assets com hash usam `Cache-Control: public, max-age=31536000, immutable`. O servidor preserva o Content-Type original e serve o arquivo não comprimido quando gzip não é aceito.
+- A árvore stage completa (`index.html`, assets e variantes gzip) não excede 600 KB no LittleFS junto ao firmware.
 - Sem `/index.html` no LittleFS, `GET /` serve o painel legado embarcado (`dashboard.h`): degradação conhecida, mesmos estados.
 - Os estados não dependem somente de cor: têm texto, contraste legível e associação com o sensor.
 - A interface não contém botão de apagar erros, executar comandos ou escrever na ECU.
@@ -94,20 +101,23 @@ campos obrigatórios é resposta inválida e segue o tratamento de falha HTTP.
 
 ## Casos de borda
 
-| #   | QUANDO                                                          | A página DEVE                                                                    |
-| --- | --------------------------------------------------------------- | -------------------------------------------------------------------------------- |
-| 1   | Abre sem scanner e antes do primeiro JSON                       | Mostrar estrutura, carregamento inicial e depois estado offline, sem tela vazia. |
-| 2   | O sensor ainda não foi lido ou não é suportado                  | Diferenciar ausência de leitura de ausência de suporte.                          |
-| 3   | O sensor retorna zero válido                                    | Exibir `0` com unidade, sem substituí-lo por `—`.                                |
-| 4   | A leitura fica inválida, vence ou o scanner desconecta          | Retirar o valor como atual e identificar a última leitura, caso seja mostrada.   |
-| 5   | Bluetooth conecta, mas inicialização ou ECU ainda não respondeu | Diferenciar as fases sem anunciar OBD conectado.                                 |
-| 6   | HTTP falha, demora ou retorna JSON inválido                     | Mostrar falha de comunicação, não sobrepor consultas e continuar tentando.       |
-| 7   | HTTP e coleta se recuperam                                      | Atualizar estados e valores sem recarregamento nem timers duplicados.            |
-| 8   | A tela tem 320 ou 360 pixels CSS de largura                     | Manter textos e cartões legíveis, sem rolagem horizontal.                        |
-| 9   | O celular não tem internet                                      | Carregar toda a interface pela origem local, sem requisições externas.           |
-| 10  | A tensão é obtida por uma origem diferente                      | Usar a identificação recebida da API, sem assumir que é tensão da bateria.       |
-| 11  | A aba volta após ficar suspensa pelo Android                    | Retomar consulta sem rajada; só apresentar dados como atuais após resposta nova. |
-| 12  | O LittleFS está sem `index.html` (stage/uploadfs pendente)      | Servir o painel legado embarcado em `GET /`, com os mesmos estados.              |
+| #   | QUANDO                                                          | A página DEVE                                                                                             |
+| --- | --------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------- |
+| 1   | Abre sem scanner e antes do primeiro JSON                       | Mostrar estrutura, carregamento inicial e depois estado offline, sem tela vazia.                          |
+| 2   | O sensor ainda não foi lido ou não é suportado                  | Diferenciar ausência de leitura de ausência de suporte.                                                   |
+| 3   | O sensor retorna zero válido                                    | Exibir `0` com unidade, sem substituí-lo por `—`.                                                         |
+| 4   | A leitura fica inválida, vence ou o scanner desconecta          | Retirar o valor como atual e identificar a última leitura, caso seja mostrada.                            |
+| 5   | Bluetooth conecta, mas inicialização ou ECU ainda não respondeu | Diferenciar as fases sem anunciar OBD conectado.                                                          |
+| 6   | HTTP falha, demora ou retorna JSON inválido                     | Mostrar falha de comunicação, não sobrepor consultas e continuar tentando.                                |
+| 7   | HTTP e coleta se recuperam                                      | Atualizar estados e valores sem recarregamento nem timers duplicados.                                     |
+| 8   | A tela tem 320 ou 360 pixels CSS de largura                     | Manter textos e cartões legíveis, sem rolagem horizontal.                                                 |
+| 9   | O celular não tem internet                                      | Carregar toda a interface pela origem local, sem requisições externas.                                    |
+| 10  | A tensão é obtida por uma origem diferente                      | Usar a identificação recebida da API, sem assumir que é tensão da bateria.                                |
+| 11  | A aba volta após ficar suspensa pelo Android                    | Retomar consulta sem rajada; só apresentar dados como atuais após resposta nova.                          |
+| 12  | O LittleFS está sem `index.html` (stage/uploadfs pendente)      | Servir o painel legado embarcado em `GET /`, com os mesmos estados.                                       |
+| 13  | O navegador aceita gzip e solicita um asset                     | Receber o conteúdo comprimido com Content-Type original, Content-Encoding gzip e `Vary: Accept-Encoding`. |
+| 14  | O navegador não aceita gzip                                     | Receber o asset sem compressão, com Content-Type correto.                                                 |
+| 15  | O navegador recarrega um asset com hash                         | Receber política de cache imutável; `GET /` continua revalidável.                                         |
 
 ## Questões em aberto
 
@@ -125,14 +135,15 @@ bun run firmware:test:web
 A suíte acima cobre as quatro primeiras linhas da matriz no navegador contra o HTML real servido localmente;
 a última (ensaio integrado com API e navegador Android no Wi-Fi do ESP32) permanece pendente de hardware.
 
-| Validação necessária                                                     | Casos cobertos | Critério binário                                                                  |
-| ------------------------------------------------------------------------ | -------------- | --------------------------------------------------------------------------------- |
-| Testes de renderização com snapshots da SPEC-0002                        | 1–5, 10        | Textos, unidades, origem da tensão e tratamento de zero/nulos conforme contrato.  |
-| Testes de polling com resposta lenta, falha, JSON inválido e recuperação | 6–7, 11        | No máximo uma requisição; recuperação automática e ausência de timers duplicados. |
-| Testes de layout em navegador a 320 e 360 pixels e tela maior            | 8              | Não há overflow horizontal; cartões e mensagens permanecem acessíveis.            |
-| Teste de carregamento com acesso externo bloqueado                       | 9              | A interface funciona e todas as requisições têm a origem local do dispositivo.    |
-| Fallback com LittleFS vazio                                              | 12             | `GET /` responde 200 com o painel legado quando `data/index.html` não existe.     |
-| Teste integrado com API e ensaio no navegador Android real               | 1–11           | Estados web e OBD distinguíveis; leituras e reconexão observadas no dispositivo.  |
+| Validação necessária                                                     | Casos cobertos | Critério binário                                                                    |
+| ------------------------------------------------------------------------ | -------------- | ----------------------------------------------------------------------------------- |
+| Testes de renderização com snapshots da SPEC-0002                        | 1–5, 10        | Textos, unidades, origem da tensão e tratamento de zero/nulos conforme contrato.    |
+| Testes de polling com resposta lenta, falha, JSON inválido e recuperação | 6–7, 11        | No máximo uma requisição; recuperação automática e ausência de timers duplicados.   |
+| Testes de layout em navegador a 320 e 360 pixels e tela maior            | 8              | Não há overflow horizontal; cartões e mensagens permanecem acessíveis.              |
+| Teste de carregamento com acesso externo bloqueado                       | 9              | A interface funciona e todas as requisições têm a origem local do dispositivo.      |
+| Fallback com LittleFS vazio                                              | 12             | `GET /` responde 200 com o painel legado quando `data/index.html` não existe.       |
+| Entrega de assets estáticos                                              | 13–15          | URLs geradas existem no LittleFS; gzip, Content-Type e políticas de cache corretos. |
+| Teste integrado com API e ensaio no navegador Android real               | 1–11           | Estados web e OBD distinguíveis; leituras e reconexão observadas no dispositivo.    |
 
 O teste integrado pode reutilizar a evidência de API da SPEC-0002 quando os casos de interface forem
 explicitamente registrados. Simulação no navegador não substitui o ensaio Wi-Fi/Bluetooth no hardware.
@@ -161,10 +172,29 @@ real extraído de `apps/firmware/include/dashboard.h`:
 O ensaio integrado com API real e navegador Android via Wi-Fi do ESP32 (última linha da matriz)
 permanece pendente; o `implemented-by` acima cobre host + compilação, não o ensaio em hardware.
 
-Evidência de 2026-10-15 no host de desenvolvimento (painel React + WS + LittleFS):
+Evidência de 2026-10-19 para a entrega de assets estáticos (painel React + WS + LittleFS):
 
-- `bun run build` em `apps/web/`: `dist/index.html` com 267 KB (83 KB gz), bundle único sem
-  requisições externas, dentro do orçamento de 600 KB.
+- Build de produção gera HTML separado de CSS/JS com hash e sidecars gzip; o stage copia a árvore
+  completa para `apps/firmware/data/` e mantém o total abaixo de 600 KB.
+- `bun test src/build-assets.test.ts` em `apps/web/`: 1 teste GREEN, 11 verificações; saída staged
+  com 358.233 bytes (349,8 KB), abaixo do limite de 600 KB. CSS e JavaScript têm variantes gzip.
+- `bun run test`: 22 testes GREEN e 62 verificações; `bun run typecheck`: SUCCESS.
+- `apps/firmware/include/static_asset_policy.h` tem cobertura nativa para negociação gzip, fallback
+  sem gzip e política de cache. O teste HTTP nativo também confirma nomes com hash e `q=0`.
+- `PATH=$PWD/.venv/bin:$PATH bun run firmware:test`: 48 testes nativos GREEN; `bun run
+firmware:test:web`: 17 testes Playwright GREEN.
+- `bun run web:deploy --build-only` na árvore combinada com OTA: SUCCESS; firmware usa 19,8% da
+  RAM e 94,6% do slot OTA (1.673.801 de 1.769.472 bytes). O stage ocupa 349,8 KB do limite de
+  448 KB.
+- O upload USB de LittleFS e firmware da versão com assets terminou com sucesso e hash verificado
+  pela placa ESP32-D0WDQ6 antes da adoção da tabela OTA. A migração física para essa tabela e o
+  primeiro upload OTA ainda estão pendentes.
+- A verificação HTTP dos cabeçalhos gzip ainda não foi possível pelo host: ele está em
+  `192.168.18.6` e encaminha `192.168.4.1` pelo roteador `192.168.18.1`, sem acesso à rede SoftAP
+  do ESP32. O ensaio integrado com navegador Android físico continua pendente.
+
+O build singlefile de 2026-10-15 abaixo foi substituído e não é evidência da entrega atual.
+
 - `bun test` em `apps/web/`: 21 testes GREEN (`envelope.test.ts`: parsing/validação do envelope,
   estados do painel e formatação; `source.test.ts`: URL do WS, host e backoff).
 - `bun run firmware:test` (`pio test -e native`): 32 casos GREEN, incluindo `test_ws`

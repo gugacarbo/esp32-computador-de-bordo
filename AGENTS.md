@@ -62,6 +62,7 @@ bun run firmware:test:web
 
 Painel web no ESP32 (placa via USB): `bun run web:deploy --port /dev/ttyUSB0`
 (build web + stage p/ LittleFS + build firmware + `uploadfs` + `upload`).
+Por Wi-Fi (host na rede `Onix-MVP`, placa já com OTA): `bun run web:deploy --ota` (ADR-0009).
 Somente validação local sem placa: `bun scripts/web-deploy.mjs --build-only`.
 
 ## Git & PRs

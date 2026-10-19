@@ -10,6 +10,7 @@ playwright/.cache/
 apps/firmware/.pio/
 apps/firmware/data/*.html
 apps/firmware/data/*.gz
+apps/firmware/data/assets/
 .platformio/
 
 # Artefatos do Playwright MCP (capturas e logs locais)

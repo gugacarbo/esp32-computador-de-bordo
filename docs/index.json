@@ -76,11 +76,37 @@
     "path": "docs/adr/0007-serve-painel-react-por-littlefs-com-websocket.md",
     "layer": "adr",
     "title": "Serve painel React por LittleFS com WebSocket",
-    "status": "accepted",
+    "status": "superseded",
     "builds-on": [
       "ADR-0004",
       "ADR-0005",
       "ADR-0006"
+    ],
+    "superseded-by": "ADR-0008",
+    "implemented-by": []
+  },
+  {
+    "id": "ADR-0008",
+    "path": "docs/adr/0008-serve-painel-com-assets-estaticos-compactados.md",
+    "layer": "adr",
+    "title": "Serve painel com assets estáticos compactados",
+    "status": "accepted",
+    "builds-on": [
+      "ADR-0007"
+    ],
+    "superseded-by": null,
+    "implemented-by": []
+  },
+  {
+    "id": "ADR-0009",
+    "path": "docs/adr/0009-habilita-atualizacao-ota-por-wi-fi-com-arduinoota.md",
+    "layer": "adr",
+    "title": "Habilita atualização OTA por Wi-Fi com ArduinoOTA",
+    "status": "accepted",
+    "builds-on": [
+      "ADR-0002",
+      "ADR-0004",
+      "ADR-0008"
     ],
     "superseded-by": null,
     "implemented-by": []
@@ -120,7 +146,7 @@
     "title": "Exibe o painel offline no Android",
     "status": "accepted",
     "builds-on": [
-      "ADR-0007",
+      "ADR-0008",
       "SPEC-0002"
     ],
     "superseded-by": null,
@@ -130,6 +156,11 @@
       "apps/web/src/lib/envelope.ts",
       "apps/web/src/lib/source.ts",
       "apps/firmware/src/main.cpp",
+      "apps/firmware/include/static_asset_policy.h",
+      "apps/firmware/test/test_http/test_http.cpp",
+      "apps/web/vite.config.ts",
+      "apps/web/scripts/stage.mjs",
+      "apps/web/src/build-assets.test.ts",
       "apps/firmware/include/ws_broadcast.h",
       "scripts/web-deploy.mjs"
     ]

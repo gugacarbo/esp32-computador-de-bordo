@@ -7,6 +7,11 @@ useGitignore: true
 import:
   - "@cspell/dict-pt-br/cspell-ext.json"
 words:
+  - arduinoota
+  - atualizacao
+  - coredump
+  - estaticos
+  - stagear
   - bluetooth
   - bunx
   - canonico

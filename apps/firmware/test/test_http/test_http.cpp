@@ -1,12 +1,28 @@
 #include "api.h"
+#include "static_asset_policy.h"
 #include <cassert>
 #include <cmath>
 #include <iostream>
+#include <string>
 #include <thread>
 #include <atomic>
 using namespace onix;
 static uint64_t clockNow(void* ctx) { return *static_cast<uint64_t*>(ctx); }
 int main() {
+  assert(onix::acceptsGzipEncoding("gzip, deflate, br"));
+  assert(onix::acceptsGzipEncoding("br, GZIP;q=0.5"));
+  assert(!onix::acceptsGzipEncoding("gzip;q=0, br"));
+  assert(!onix::acceptsGzipEncoding("gzip;q=0.000"));
+  assert(!onix::acceptsGzipEncoding("br, deflate"));
+  assert(onix::selectAssetPath("/assets/app-Ab12cd.js", true, true) ==
+         "/assets/app-Ab12cd.js.gz");
+  assert(onix::selectAssetPath("/assets/app-Ab12cd.js", false, true) ==
+         "/assets/app-Ab12cd.js");
+  assert(onix::selectAssetPath("/assets/app-Ab12cd.js", true, false) ==
+         "/assets/app-Ab12cd.js");
+  assert(onix::cacheControlForAsset("/assets/app-Ab12cd.js") ==
+         std::string("public, max-age=31536000, immutable"));
+  assert(onix::cacheControlForAsset("/index.html") == std::string("no-cache"));
   auto timing = defaultTimingConfig();
   SnapshotStore store;
   uint64_t now = 10000;

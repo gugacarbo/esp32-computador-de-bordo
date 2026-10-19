@@ -64,6 +64,12 @@ constexpr uint16_t ONIX_WS_PORT = 81;
 constexpr uint32_t ONIX_WS_BROADCAST_MS = 500;
 constexpr uint32_t ONIX_SERIAL_BAUD = 115200;
 
+// Atualização por Wi-Fi (ADR-0009): ArduinoOTA na rede do SoftAP. A senha precisa bater com
+// `--auth` do env `ota` em platformio.ini; quem está no AP sem ela não grava firmware.
+constexpr char ONIX_OTA_HOSTNAME[] = "onix";
+constexpr char ONIX_OTA_PASSWORD[] = "onix-ota";
+constexpr uint16_t ONIX_OTA_PORT = 3232;
+
 // Cabeçalhos do contrato HTTP (SPEC-0002 §Rede e recursos).
 constexpr char ONIX_CONTENT_TYPE_HTML[] = "text/html; charset=utf-8";
 constexpr char ONIX_CONTENT_TYPE_JSON[] = "application/json";

@@ -31,7 +31,6 @@
 		"tailwindcss": "^4.3.3",
 		"typescript": "^7.0.2",
 		"vite": "^8.3.4",
-		"vite-plugin-compression": "^0.5.1",
-		"vite-plugin-singlefile": "^2.3.3"
+		"vite-plugin-compression": "^0.5.1"
 	}
 }

@@ -37,7 +37,7 @@ A identidade do ELM327 fica em `include/config.h`: `ONIX_BT_DEVICE_NAME` (padrã
 
 O firmware envia apenas Serviço 01 (leitura de PIDs) e `AT RV`; nunca apaga códigos de falha nem escreve na ECU. A task OBD roda no núcleo 1 porque a inicialização do ELMduino faz espera ativa e o watchdog do ESP32 reinicia a placa se o idle do núcleo 0 ficar sem CPU por 5 s.
 
-A tabela de partição é `huge_app.csv` (Bluetooth Classic + Wi-Fi não cabem na partição de app padrão). Ao trocar de tabela, grave também o LittleFS (`bun run web:deploy` já executa `uploadfs`).
+A tabela de partição é `partitions_ota.csv` (ADR-0009): dois slots de app de 1,69 MB para OTA (Bluetooth Classic + Wi-Fi não cabem na partição de app padrão) e 512 KB de LittleFS. Ao trocar de tabela, grave por USB e grave também o LittleFS (`bun run web:deploy` já executa `uploadfs`).
 
 ## Gravação e diagnóstico
 
@@ -51,6 +51,10 @@ pio device monitor --baud 115200 --port /dev/ttyUSB0
 Para publicar o painel React (`apps/web`) junto com o firmware em um comando só,
 prefira na raiz do repo `bun run web:deploy --port /dev/ttyUSB0` (build web + stage
 p/ LittleFS + build + `uploadfs` + `upload`).
+
+### Atualização por Wi-Fi (OTA)
+
+Depois de uma gravação por USB com firmware que inclui OTA, conecte o computador à rede `Onix-MVP` e rode na raiz `bun run web:deploy --ota` (ou `pio run -d apps/firmware -e ota -t upload`/`-t uploadfs`). O espota envia para `192.168.4.1:3232` com a senha `ONIX_OTA_PASSWORD` de `include/config.h`, que deve bater com `--auth` do env `ota`. O ESP32 abre uma conexão TCP de volta para o computador: libere-a no firewall local. Cada gravação reinicia a placa; o script espera o HTTP voltar antes da próxima.
 
 A porta acima é um exemplo: confirme a porta real antes de gravar. Alimente por USB durante o MVP; instalação elétrica automotiva permanente não está incluída.
 

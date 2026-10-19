@@ -1,6 +1,6 @@
-// main.cpp — integração do firmware ONIX no ESP32 (SPEC-0002, ADR-0004, ADR-0005).
+// main.cpp — integração do firmware ONIX no ESP32 (SPEC-0002, ADR-0004, ADR-0005, ADR-0009).
 //
-// PONTO ÚNICO de contato com Arduino/ESP32: SoftAP, WebServer e a task FreeRTOS do OBD.
+// PONTO ÚNICO de contato com Arduino/ESP32: SoftAP, WebServer, ArduinoOTA e a task FreeRTOS do OBD.
 // A política HTTP (rotas, 404/405, cabeçalhos, serialização) vive em ApiRouter (api.cpp);
 // aqui apenas traduzimos HttpRequest/HttpResponse em chamadas do WebServer.
 //
@@ -10,6 +10,7 @@
 #if defined(ARDUINO) || defined(ESP32) || defined(ARDUINO_ARCH_ESP32)
 
 #include <Arduino.h>
+#include <ArduinoOTA.h>
 #include <LittleFS.h>
 #include <WebServer.h>
 #include <WebSocketsServer.h>
@@ -22,6 +23,7 @@
 #include "dashboard.h"
 #include "obd.h"
 #include "snapshot.h"
+#include "static_asset_policy.h"
 #include "ws_broadcast.h"
 
 namespace {
@@ -40,6 +42,7 @@ ApiRouter g_apiRouter(g_snapshotStore, g_timing, onix::DASHBOARD_HTML);
 WebServer g_server(onix::ONIX_HTTP_PORT);
 WebSocketsServer g_webSocket(onix::ONIX_WS_PORT);
 uint32_t g_lastWsBroadcastMs = 0;
+TaskHandle_t g_obdTaskHandle = nullptr;
 
 HttpMethod mapHttpMethod(HTTPMethod method) {
   switch (method) {
@@ -94,13 +97,20 @@ bool tryServeLittleFS(const char* path) {
   if (strstr(path, "..") != nullptr) {
     return false;
   }
-  if (!LittleFS.exists(path)) {
+  const String compressedPath = String(path) + ".gz";
+  const bool compressedExists = LittleFS.exists(compressedPath);
+  const String acceptEncoding = g_server.header("Accept-Encoding");
+  const std::string selectedPath = onix::selectAssetPath(
+      path, onix::acceptsGzipEncoding(acceptEncoding.c_str()), compressedExists);
+  if (!LittleFS.exists(selectedPath.c_str())) {
     return false;
   }
-  File file = LittleFS.open(path, "r");
+  File file = LittleFS.open(selectedPath.c_str(), "r");
   if (!file) {
     return false;
   }
+  g_server.sendHeader("Vary", "Accept-Encoding");
+  g_server.sendHeader("Cache-Control", onix::cacheControlForAsset(path));
   g_server.streamFile(file, contentTypeForPath(path));
   file.close();
   return true;
@@ -165,6 +175,34 @@ void obdTask(void* parameter) {
   onix::runObdTask(store);
 }
 
+// ArduinoOTA (ADR-0009): espota grava firmware (U_FLASH) no slot livre ou o LittleFS (U_SPIFFS).
+// Durante a gravação a task OBD fica suspensa para liberar CPU e rádio, e o LittleFS é
+// desmontado antes de ser sobrescrito. Sucesso reinicia a placa; erro retoma a task.
+void setupOta() {
+  ArduinoOTA.setHostname(onix::ONIX_OTA_HOSTNAME);
+  ArduinoOTA.setPassword(onix::ONIX_OTA_PASSWORD);
+  ArduinoOTA.setPort(onix::ONIX_OTA_PORT);
+  ArduinoOTA.onStart([]() {
+    const bool filesystem = ArduinoOTA.getCommand() == U_SPIFFS;
+    if (g_obdTaskHandle != nullptr) {
+      vTaskSuspend(g_obdTaskHandle);
+    }
+    if (filesystem) {
+      LittleFS.end();
+    }
+    Serial.printf("[onix] OTA iniciada (%s)\n", filesystem ? "LittleFS" : "firmware");
+  });
+  ArduinoOTA.onEnd([]() { Serial.println("[onix] OTA concluída; reiniciando"); });
+  ArduinoOTA.onError([](ota_error_t error) {
+    Serial.printf("[onix] OTA falhou (erro %u)\n", static_cast<unsigned>(error));
+    if (g_obdTaskHandle != nullptr) {
+      vTaskResume(g_obdTaskHandle);
+    }
+  });
+  ArduinoOTA.begin();
+  Serial.printf("[onix] OTA na porta %u\n", static_cast<unsigned>(onix::ONIX_OTA_PORT));
+}
+
 }  // namespace
 
 void setup() {
@@ -202,6 +240,8 @@ void setup() {
   g_server.on(onix::API_ROUTE_ROOT, handleWithApiRouter);
   g_server.on(onix::API_ROUTE_DATA, handleWithApiRouter);
   g_server.onNotFound(handleWithApiRouter);
+  const char* requestHeaders[] = {"Accept-Encoding"};
+  g_server.collectHeaders(requestHeaders, 1);
   g_server.begin();
   Serial.printf("[onix] HTTP na porta %u\n", static_cast<unsigned>(onix::ONIX_HTTP_PORT));
 
@@ -218,17 +258,20 @@ void setup() {
   // Falha na criação é logada; o HTTP segue de pé.
   const BaseType_t created =
       xTaskCreatePinnedToCore(obdTask, "onix-obd", onix::ONIX_OBD_TASK_STACK_SIZE,
-                              &g_snapshotStore, onix::ONIX_OBD_TASK_PRIORITY, nullptr,
+                              &g_snapshotStore, onix::ONIX_OBD_TASK_PRIORITY, &g_obdTaskHandle,
                               onix::ONIX_OBD_TASK_CORE);
   if (created != pdPASS) {
     Serial.println("[onix] falha ao criar a task OBD");
   }
+
+  setupOta();
 }
 
 void loop() {
   g_server.handleClient();  // não bloqueia: a coleta OBD pertence exclusivamente à task
   g_webSocket.loop();       // idem: bombeia frames sem bloquear
   maybeBroadcastWs();       // throttle por millis(), só com clientes; sem delay
+  ArduinoOTA.handle();      // só bloqueia durante uma gravação OTA em andamento
 }
 
 #else

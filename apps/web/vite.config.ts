@@ -2,21 +2,17 @@ import tailwindcss from "@tailwindcss/vite";
 import react from "@vitejs/plugin-react";
 import { defineConfig } from "vite";
 import compression from "vite-plugin-compression";
-import { viteSingleFile } from "vite-plugin-singlefile";
 
 export default defineConfig({
-	plugins: [
-		react(),
-		tailwindcss(),
-		viteSingleFile(),
-		compression({ algorithm: "gzip" }),
-	],
+	plugins: [react(), tailwindcss(), compression({ algorithm: "gzip" })],
 	build: {
 		minify: "esbuild",
 		sourcemap: false,
 		target: "es2020",
 		reportCompressedSize: false,
 		chunkSizeWarningLimit: 600,
+		assetsDir: "assets",
+		rollupOptions: { output: { codeSplitting: false } },
 	},
 	server: {
 		port: 5173,

@@ -1,10 +1,12 @@
 ---
-status: accepted
+status: superseded
 date: 2026-10-15
 builds-on: [ADR-0004, ADR-0005, ADR-0006]
-superseded-by: null
+superseded-by: ADR-0008
 deciders: ["project maintainer"]
 ---
+
+> ⚠️ VERDADE ATUAL: LittleFS, WebSocket e deploy local permanecem; o bundle singlefile foi substituído por assets separados e gzip na ADR-0008.
 
 # Serve painel React por LittleFS com WebSocket
 

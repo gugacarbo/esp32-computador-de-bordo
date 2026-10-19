@@ -13,6 +13,8 @@ formato da tabela é apontada pelo comando, nunca lida em silêncio.
 | 0003 | Usa ELM327 via Bluetooth Classic para acesso OBD        | 2026-10-13 | em uso   |
 | 0004 | Isola OBD em uma task e compartilha leituras em memória | 2026-10-13 | em uso   |
 | 0005 | Serve painel offline por HTTP com polling               | 2026-10-13 | em uso   |
+| 0008 | Serve painel com assets estáticos compactados           | 2026-10-19 | em uso   |
+| 0009 | Habilita atualização OTA por Wi-Fi com ArduinoOTA       | 2026-10-19 | em uso   |
 
 ## Reservas Spec
 
