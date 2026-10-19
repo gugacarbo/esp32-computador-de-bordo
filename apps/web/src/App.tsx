@@ -1,4 +1,5 @@
 import type { ReactElement } from "react";
+import { DiagnosticsPanel } from "./components/DiagnosticsPanel";
 import { SensorCard } from "./components/SensorCard";
 import { Badge } from "./components/ui/badge";
 import { useTelemetry } from "./hooks/useTelemetry";
@@ -84,6 +85,8 @@ export default function App(): ReactElement {
 							: `${Math.floor(envelope.uptimeMs / 1000)}s`}
 					</span>
 				</footer>
+
+				<DiagnosticsPanel />
 			</div>
 		</div>
 	);

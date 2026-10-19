@@ -1,10 +1,12 @@
 ---
-status: accepted # proposed | accepted | deprecated | superseded
+status: superseded # proposed | accepted | deprecated | superseded
 date: 2026-10-19
 builds-on: [ADR-0007] # ADRs relacionados: ADR-NNNN ou repo:ADR-NNNN
-superseded-by: null # escalar; preenchido no ADR antigo no commit que aceita o novo
+superseded-by: ADR-0010 # escalar; preenchido no ADR antigo no commit que aceita o novo
 deciders: ["project maintainer"]
 ---
+
+> ⚠️ VERDADE ATUAL: assets separados com hash, gzip e políticas de cache permanecem; as cópias sem compressão e a negociação de `Accept-Encoding` foram removidas na ADR-0010.
 
 # Serve painel com assets estáticos compactados
 

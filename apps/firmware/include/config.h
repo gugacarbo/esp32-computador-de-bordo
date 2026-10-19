@@ -70,6 +70,14 @@ constexpr char ONIX_OTA_HOSTNAME[] = "onix";
 constexpr char ONIX_OTA_PASSWORD[] = "onix-ota";
 constexpr uint16_t ONIX_OTA_PORT = 3232;
 
+// Logging (ADR-0011): buffer circular em RAM lido por GET /api/logs. 64 x ~140 B ≈ 9 KB fixos.
+// ONIX_LOG_MIN_LEVEL: 0=error, 1=warn, 2=info, 3=debug (entradas acima são descartadas).
+constexpr std::size_t ONIX_LOG_CAPACITY = 64;
+constexpr std::size_t ONIX_LOG_MESSAGE_MAX = 120;
+constexpr std::size_t ONIX_LOG_TAG_MAX = 8;
+constexpr uint8_t ONIX_LOG_MIN_LEVEL = 2;
+constexpr uint32_t ONIX_METRICS_INTERVAL_MS = 30000;  // heap/stack/uptime no log
+
 // Cabeçalhos do contrato HTTP (SPEC-0002 §Rede e recursos).
 constexpr char ONIX_CONTENT_TYPE_HTML[] = "text/html; charset=utf-8";
 constexpr char ONIX_CONTENT_TYPE_JSON[] = "application/json";

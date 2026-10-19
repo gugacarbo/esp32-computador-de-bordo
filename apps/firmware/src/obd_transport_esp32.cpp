@@ -21,6 +21,7 @@
 #include <cstring>
 
 #include "api.h"  // monotonicUptimeMs(): mesma base de tempo da API (updatedAtMs, ageMs)
+#include "log.h"
 #include "obd.h"
 #include "obd_elm.h"
 
@@ -82,15 +83,23 @@ bool parseBtMac(const char* text, uint8_t out[6]) {
   return true;
 }
 
-// Log na serial. Imprime as linhas com nível até o limite configurado (Quiet < Transition < Verbose).
+// Encaminha as linhas da sessão OBD ao log do firmware (ADR-0011) até o limite configurado
+// (Quiet < Transition < Verbose). O prefixo "[obd] " das linhas vira a tag.
 class SerialLogSink : public ObdLogSink {
  public:
   explicit SerialLogSink(ObdLogLevel threshold) : threshold_(threshold) {}
 
   void log(ObdLogLevel level, const char* line) override {
-    if (line != nullptr && static_cast<int>(level) <= static_cast<int>(threshold_)) {
-      Serial.println(line);
+    if (line == nullptr || static_cast<int>(level) > static_cast<int>(threshold_)) {
+      return;
     }
+    constexpr char kPrefix[] = "[obd] ";
+    const char* message =
+        std::strncmp(line, kPrefix, sizeof(kPrefix) - 1) == 0 ? line + sizeof(kPrefix) - 1 : line;
+    const LogLevel mapped = level == ObdLogLevel::Quiet        ? LogLevel::Warn
+                            : level == ObdLogLevel::Transition ? LogLevel::Info
+                                                               : LogLevel::Debug;
+    logf(mapped, "obd", "%s", message);
   }
 
  private:
@@ -137,7 +146,7 @@ class Elm327BtTransport : public ObdTransport {
     if (ONIX_BT_DEVICE_MAC[0] != '\0') {
       uint8_t mac[6] = {0, 0, 0, 0, 0, 0};
       if (!parseBtMac(ONIX_BT_DEVICE_MAC, mac)) {
-        Serial.println("[bt] ONIX_BT_DEVICE_MAC invalido (esperado AA:BB:CC:DD:EE:FF)");
+        ONIX_LOGE("bt", "ONIX_BT_DEVICE_MAC invalido (esperado AA:BB:CC:DD:EE:FF)");
         return false;
       }
       return SerialBT.connect(mac);
@@ -300,9 +309,8 @@ void runObdTask(SnapshotStore& store) {
 
     const uint64_t now = monotonicUptimeMs();
     if (now >= nextStackLogMs) {
-      Serial.printf("[obd] folga minima da pilha: %u bytes\n",
-                    static_cast<unsigned>(uxTaskGetStackHighWaterMark(nullptr) *
-                                          sizeof(StackType_t)));
+      ONIX_LOGI("obd", "folga minima da pilha: %u bytes",
+                static_cast<unsigned>(uxTaskGetStackHighWaterMark(nullptr) * sizeof(StackType_t)));
       nextStackLogMs = now + kStackLogPeriodMs;
     }
   }

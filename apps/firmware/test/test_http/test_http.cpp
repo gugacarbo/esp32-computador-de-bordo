@@ -9,17 +9,8 @@
 using namespace onix;
 static uint64_t clockNow(void* ctx) { return *static_cast<uint64_t*>(ctx); }
 int main() {
-  assert(onix::acceptsGzipEncoding("gzip, deflate, br"));
-  assert(onix::acceptsGzipEncoding("br, GZIP;q=0.5"));
-  assert(!onix::acceptsGzipEncoding("gzip;q=0, br"));
-  assert(!onix::acceptsGzipEncoding("gzip;q=0.000"));
-  assert(!onix::acceptsGzipEncoding("br, deflate"));
-  assert(onix::selectAssetPath("/assets/app-Ab12cd.js", true, true) ==
-         "/assets/app-Ab12cd.js.gz");
-  assert(onix::selectAssetPath("/assets/app-Ab12cd.js", false, true) ==
-         "/assets/app-Ab12cd.js");
-  assert(onix::selectAssetPath("/assets/app-Ab12cd.js", true, false) ==
-         "/assets/app-Ab12cd.js");
+  assert(onix::selectAssetPath("/assets/app-Ab12cd.js", true) == "/assets/app-Ab12cd.js.gz");
+  assert(onix::selectAssetPath("/index.html", false) == "/index.html");
   assert(onix::cacheControlForAsset("/assets/app-Ab12cd.js") ==
          std::string("public, max-age=31536000, immutable"));
   assert(onix::cacheControlForAsset("/index.html") == std::string("no-cache"));
@@ -38,6 +29,22 @@ int main() {
   assert(api.handle({HttpMethod::Head, "/"}).status == 405);
   assert(api.handle({HttpMethod::Post, "/missing"}).status == 404);
   assert(api.handle({HttpMethod::Get, "/"}).body == "<html>ONIX</html>");
+  // GET /api/logs sem LogBuffer injetado: lista vazia, mesmo contrato de /api/data.
+  auto emptyLogs = api.handle({HttpMethod::Get, "/api/logs"});
+  assert(emptyLogs.status == 200);
+  assert(emptyLogs.contentType == "application/json");
+  assert(emptyLogs.headerValue("Cache-Control") == "no-store");
+  assert(emptyLogs.body == "{\"uptimeMs\":10000,\"dropped\":0,\"entries\":[]}");
+  assert(api.handle({HttpMethod::Post, "/api/logs"}).status == 405);
+  assert(api.handle({HttpMethod::Post, "/api/logs"}).headerValue("Allow") == "GET");
+  assert(api.handle({HttpMethod::Get, "/api/data"}).status == 200);
+  // Com LogBuffer injetado, a entrada gravada aparece no corpo JSON.
+  onix::LogBuffer logs;
+  logs.append(10000, onix::LogLevel::Warn, "bt", "falha");
+  ApiRouter apiWithLogs(store, timing, "<html>ONIX</html>", clockNow, &now, &logs);
+  auto loggedBody = apiWithLogs.handle({HttpMethod::Get, "/api/logs"}).body;
+  assert(loggedBody.find("\"level\":\"warn\",\"tag\":\"bt\",\"message\":\"falha\"") !=
+         std::string::npos);
   Snapshot s;
   s.btConnected = s.adapterReady = s.hasEcuResponse = true;
   s.lastEcuResponseMs = now;

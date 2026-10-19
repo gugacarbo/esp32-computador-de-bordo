@@ -1,7 +1,7 @@
 ---
 status: accepted
 date: 2026-10-13
-builds-on: [ADR-0004, ADR-0005, SPEC-0001]
+builds-on: [ADR-0004, ADR-0005, ADR-0011, SPEC-0001]
 implemented-by: []
 ---
 
@@ -33,6 +33,10 @@ pendente, não uma implementação no app Bun.
 - Centralizar SSID, senha e endereço; informar o endereço efetivo pelo Serial.
 - `GET /`: HTTP 200 com `Content-Type: text/html; charset=utf-8`, contendo a interface da SPEC-0003.
 - `GET /api/data`: HTTP 200 com `Content-Type: application/json` e `Cache-Control: no-store`.
+- `GET /api/logs`: HTTP 200 com `Content-Type: application/json` e `Cache-Control: no-store`; corpo
+  `{"uptimeMs":N,"dropped":N,"entries":[{"uptimeMs":N,"level":"info","tag":"obd","message":"..."}]}`
+  com as últimas entradas do buffer de log em RAM, da mais antiga para a mais nova (ADR-0011).
+  `level` é `error`, `warn`, `info` ou `debug`; `dropped` conta entradas sobrescritas desde o boot.
 - Falta de dados, scanner ou ECU é estado do JSON, não erro HTTP do recurso disponível.
 - Caminho inexistente: HTTP 404. Método diferente de GET nas rotas conhecidas: HTTP 405, sem efeitos.
 - Não há autenticação de aplicação; acesso exige conexão à rede local protegida pela senha do SoftAP.
@@ -140,19 +144,20 @@ em `valid`, em vez de reconstruir a política a partir de timestamps.
 
 ## Casos de borda
 
-| #   | QUANDO                                                     | O sistema DEVE                                                                             |
-| --- | ---------------------------------------------------------- | ------------------------------------------------------------------------------------------ |
-| 1   | A API é consultada antes da primeira leitura               | Responder 200 com todos os sensores, valores e tempos nulos, `valid: false`.               |
-| 2   | O sensor leu zero                                          | Retornar número zero com validade, não `null` nem ausência de dado.                        |
-| 3   | Um sensor falha após uma leitura bem-sucedida              | Conservar valor e timestamp; marcar timeout/erro e atualizar a idade.                      |
-| 4   | A leitura expira com o produtor bloqueado                  | Responder com validade falsa e estado calculado a partir da cópia e do relógio atual.      |
-| 5   | Bluetooth cai ou a ECU deixa de responder                  | Refletir as fases corretas; invalidar apenas sensores cuja origem está indisponível.       |
-| 6   | Um PID não é suportado                                     | Manter o campo presente e o estado `unsupported`.                                          |
-| 7   | HTTP ocorre simultaneamente a uma atualização OBD          | Publicar uma cópia coerente, sem campos parcialmente atualizados ou mutex durante envio.   |
-| 8   | A placa reinicia ou o contador de 32 bits cruza seu limite | Não retornar valores de outro boot, idades negativas nem expiração incorreta por rollover. |
-| 9   | A tensão vem do adaptador com ECU indisponível             | Identificar `source: adapter`; não declarar a ECU saudável por essa leitura.               |
-| 10  | O cliente usa rota desconhecida ou método não permitido    | Responder 404 ou 405, respectivamente, sem enviar comandos OBD.                            |
-| 11  | O adaptador está ausente ou em inicialização demorada      | Continuar respondendo com estado offline sem aguardar conexão ou consulta ao carro.        |
+| #   | QUANDO                                                     | O sistema DEVE                                                                              |
+| --- | ---------------------------------------------------------- | ------------------------------------------------------------------------------------------- |
+| 1   | A API é consultada antes da primeira leitura               | Responder 200 com todos os sensores, valores e tempos nulos, `valid: false`.                |
+| 2   | O sensor leu zero                                          | Retornar número zero com validade, não `null` nem ausência de dado.                         |
+| 3   | Um sensor falha após uma leitura bem-sucedida              | Conservar valor e timestamp; marcar timeout/erro e atualizar a idade.                       |
+| 4   | A leitura expira com o produtor bloqueado                  | Responder com validade falsa e estado calculado a partir da cópia e do relógio atual.       |
+| 5   | Bluetooth cai ou a ECU deixa de responder                  | Refletir as fases corretas; invalidar apenas sensores cuja origem está indisponível.        |
+| 6   | Um PID não é suportado                                     | Manter o campo presente e o estado `unsupported`.                                           |
+| 7   | HTTP ocorre simultaneamente a uma atualização OBD          | Publicar uma cópia coerente, sem campos parcialmente atualizados ou mutex durante envio.    |
+| 8   | A placa reinicia ou o contador de 32 bits cruza seu limite | Não retornar valores de outro boot, idades negativas nem expiração incorreta por rollover.  |
+| 9   | A tensão vem do adaptador com ECU indisponível             | Identificar `source: adapter`; não declarar a ECU saudável por essa leitura.                |
+| 10  | O cliente usa rota desconhecida ou método não permitido    | Responder 404 ou 405, respectivamente, sem enviar comandos OBD.                             |
+| 11  | O adaptador está ausente ou em inicialização demorada      | Continuar respondendo com estado offline sem aguardar conexão ou consulta ao carro.         |
+| 12  | O buffer de log está cheio ou o cliente pede `/api/logs`   | Sobrescrever a entrada mais antiga, contar em `dropped` e responder sem esperar a task OBD. |
 
 ## Questões em aberto
 

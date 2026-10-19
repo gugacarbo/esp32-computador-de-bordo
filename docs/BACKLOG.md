@@ -6,15 +6,17 @@ formato da tabela é apontada pelo comando, nunca lida em silêncio.
 
 ## Reservas ADR
 
-| NNNN | título                                                  | data       | situação |
-| ---- | ------------------------------------------------------- | ---------- | -------- |
-| 0001 | adota-bun-workspaces-para-monorepo                      | 2026-10-13 | em uso   |
-| 0002 | Adota firmware C++ com PlatformIO no monorepo           | 2026-10-13 | em uso   |
-| 0003 | Usa ELM327 via Bluetooth Classic para acesso OBD        | 2026-10-13 | em uso   |
-| 0004 | Isola OBD em uma task e compartilha leituras em memória | 2026-10-13 | em uso   |
-| 0005 | Serve painel offline por HTTP com polling               | 2026-10-13 | em uso   |
-| 0008 | Serve painel com assets estáticos compactados           | 2026-10-19 | em uso   |
-| 0009 | Habilita atualização OTA por Wi-Fi com ArduinoOTA       | 2026-10-19 | em uso   |
+| NNNN | título                                                        | data       | situação |
+| ---- | ------------------------------------------------------------- | ---------- | -------- |
+| 0001 | adota-bun-workspaces-para-monorepo                            | 2026-10-13 | em uso   |
+| 0002 | Adota firmware C++ com PlatformIO no monorepo                 | 2026-10-13 | em uso   |
+| 0003 | Usa ELM327 via Bluetooth Classic para acesso OBD              | 2026-10-13 | em uso   |
+| 0004 | Isola OBD em uma task e compartilha leituras em memória       | 2026-10-13 | em uso   |
+| 0005 | Serve painel offline por HTTP com polling                     | 2026-10-13 | em uso   |
+| 0008 | Serve painel com assets estáticos compactados                 | 2026-10-19 | em uso   |
+| 0009 | Habilita atualização OTA por Wi-Fi com ArduinoOTA             | 2026-10-19 | em uso   |
+| 0010 | Serve assets do painel somente em gzip                        | 2026-10-19 | em uso   |
+| 0011 | Registra logs do firmware em buffer circular exposto por HTTP | 2026-10-19 | em uso   |
 
 ## Reservas Spec
 

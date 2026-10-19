@@ -1,7 +1,7 @@
 ---
 status: accepted
 date: 2026-10-13
-builds-on: [ADR-0008, SPEC-0002]
+builds-on: [ADR-0008, ADR-0010, SPEC-0002]
 implemented-by:
   - apps/web/src/App.tsx
   - apps/web/src/hooks/useTelemetry.ts
@@ -51,9 +51,9 @@ real de `dashboard.h`; o ensaio integrado em navegador Android físico permanece
 - Identificar tensão como `Tensão do adaptador` ou `Tensão da ECU` pelo campo `source`.
 - Usar organização que caiba em telas de celular sem rolagem horizontal; validar larguras de 320 e
   360 pixels CSS e uma tela maior. Não exigir gráficos, instrumentos animados ou tela de configuração.
-- HTML com CSS e JavaScript gerados como arquivos separados e versionados por `apps/web/`, sem fontes, imagens, scripts ou estilos de CDN. O build também gera variantes gzip para os assets; o servidor as entrega quando o cliente anuncia suporte a gzip e informa `Vary: Accept-Encoding`.
-- A resposta HTML usa `Cache-Control: no-cache`; assets com hash usam `Cache-Control: public, max-age=31536000, immutable`. O servidor preserva o Content-Type original e serve o arquivo não comprimido quando gzip não é aceito.
-- A árvore stage completa (`index.html`, assets e variantes gzip) não excede 600 KB no LittleFS junto ao firmware.
+- HTML com CSS e JavaScript gerados como arquivos separados e versionados por `apps/web/`, sem fontes, imagens, scripts ou estilos de CDN. O build também gera variantes gzip para os assets; o LittleFS recebe só a variante gzip e o servidor a entrega sempre (ADR-0010).
+- A resposta HTML usa `Cache-Control: no-cache`; assets com hash usam `Cache-Control: public, max-age=31536000, immutable`. O servidor preserva o Content-Type original e envia `Content-Encoding: gzip`.
+- A árvore stage (`index.html` e assets gzip) não excede 448 KB no LittleFS de 512 KB (ADR-0009).
 - Sem `/index.html` no LittleFS, `GET /` serve o painel legado embarcado (`dashboard.h`): degradação conhecida, mesmos estados.
 - Os estados não dependem somente de cor: têm texto, contraste legível e associação com o sensor.
 - A interface não contém botão de apagar erros, executar comandos ou escrever na ECU.
@@ -101,23 +101,23 @@ campos obrigatórios é resposta inválida e segue o tratamento de falha HTTP.
 
 ## Casos de borda
 
-| #   | QUANDO                                                          | A página DEVE                                                                                             |
-| --- | --------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------- |
-| 1   | Abre sem scanner e antes do primeiro JSON                       | Mostrar estrutura, carregamento inicial e depois estado offline, sem tela vazia.                          |
-| 2   | O sensor ainda não foi lido ou não é suportado                  | Diferenciar ausência de leitura de ausência de suporte.                                                   |
-| 3   | O sensor retorna zero válido                                    | Exibir `0` com unidade, sem substituí-lo por `—`.                                                         |
-| 4   | A leitura fica inválida, vence ou o scanner desconecta          | Retirar o valor como atual e identificar a última leitura, caso seja mostrada.                            |
-| 5   | Bluetooth conecta, mas inicialização ou ECU ainda não respondeu | Diferenciar as fases sem anunciar OBD conectado.                                                          |
-| 6   | HTTP falha, demora ou retorna JSON inválido                     | Mostrar falha de comunicação, não sobrepor consultas e continuar tentando.                                |
-| 7   | HTTP e coleta se recuperam                                      | Atualizar estados e valores sem recarregamento nem timers duplicados.                                     |
-| 8   | A tela tem 320 ou 360 pixels CSS de largura                     | Manter textos e cartões legíveis, sem rolagem horizontal.                                                 |
-| 9   | O celular não tem internet                                      | Carregar toda a interface pela origem local, sem requisições externas.                                    |
-| 10  | A tensão é obtida por uma origem diferente                      | Usar a identificação recebida da API, sem assumir que é tensão da bateria.                                |
-| 11  | A aba volta após ficar suspensa pelo Android                    | Retomar consulta sem rajada; só apresentar dados como atuais após resposta nova.                          |
-| 12  | O LittleFS está sem `index.html` (stage/uploadfs pendente)      | Servir o painel legado embarcado em `GET /`, com os mesmos estados.                                       |
-| 13  | O navegador aceita gzip e solicita um asset                     | Receber o conteúdo comprimido com Content-Type original, Content-Encoding gzip e `Vary: Accept-Encoding`. |
-| 14  | O navegador não aceita gzip                                     | Receber o asset sem compressão, com Content-Type correto.                                                 |
-| 15  | O navegador recarrega um asset com hash                         | Receber política de cache imutável; `GET /` continua revalidável.                                         |
+| #   | QUANDO                                                          | A página DEVE                                                                                              |
+| --- | --------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------- |
+| 1   | Abre sem scanner e antes do primeiro JSON                       | Mostrar estrutura, carregamento inicial e depois estado offline, sem tela vazia.                           |
+| 2   | O sensor ainda não foi lido ou não é suportado                  | Diferenciar ausência de leitura de ausência de suporte.                                                    |
+| 3   | O sensor retorna zero válido                                    | Exibir `0` com unidade, sem substituí-lo por `—`.                                                          |
+| 4   | A leitura fica inválida, vence ou o scanner desconecta          | Retirar o valor como atual e identificar a última leitura, caso seja mostrada.                             |
+| 5   | Bluetooth conecta, mas inicialização ou ECU ainda não respondeu | Diferenciar as fases sem anunciar OBD conectado.                                                           |
+| 6   | HTTP falha, demora ou retorna JSON inválido                     | Mostrar falha de comunicação, não sobrepor consultas e continuar tentando.                                 |
+| 7   | HTTP e coleta se recuperam                                      | Atualizar estados e valores sem recarregamento nem timers duplicados.                                      |
+| 8   | A tela tem 320 ou 360 pixels CSS de largura                     | Manter textos e cartões legíveis, sem rolagem horizontal.                                                  |
+| 9   | O celular não tem internet                                      | Carregar toda a interface pela origem local, sem requisições externas.                                     |
+| 10  | A tensão é obtida por uma origem diferente                      | Usar a identificação recebida da API, sem assumir que é tensão da bateria.                                 |
+| 11  | A aba volta após ficar suspensa pelo Android                    | Retomar consulta sem rajada; só apresentar dados como atuais após resposta nova.                           |
+| 12  | O LittleFS está sem `index.html` (stage/uploadfs pendente)      | Servir o painel legado embarcado em `GET /`, com os mesmos estados.                                        |
+| 13  | O navegador solicita um asset                                   | Receber o conteúdo comprimido com Content-Type original e Content-Encoding gzip.                           |
+| 14  | O cliente não anuncia gzip                                      | Receber o mesmo conteúdo comprimido com Content-Encoding gzip; o LittleFS não guarda cópia sem compressão. |
+| 15  | O navegador recarrega um asset com hash                         | Receber política de cache imutável; `GET /` continua revalidável.                                          |
 
 ## Questões em aberto
 

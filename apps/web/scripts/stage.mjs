@@ -1,5 +1,7 @@
 // stage.mjs — copia a árvore de dist para apps/firmware/data (LittleFS do firmware)
-// e imprime os tamanhos dos arquivos publicados.
+// e imprime os tamanhos dos arquivos publicados. Arquivo com sidecar .gz vai só comprimido:
+// o firmware serve o .gz sempre (ADR-0010), então o original só ocuparia flash.
+import { existsSync } from "node:fs";
 import { cp, mkdir, readdir, rm, stat } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -38,7 +40,10 @@ for (const entry of generatedEntries) {
 	await rm(path.join(targetDir, entry), { recursive: true, force: true });
 }
 for (const entry of await readdir(distDir)) {
-	await cp(path.join(distDir, entry), path.join(targetDir, entry), { recursive: true });
+	await cp(path.join(distDir, entry), path.join(targetDir, entry), {
+		recursive: true,
+		filter: (source) => !existsSync(`${source}.gz`),
+	});
 }
 
 const htmlSize = await sizeOf(distHtml);

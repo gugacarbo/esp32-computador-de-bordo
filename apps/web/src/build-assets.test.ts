@@ -36,7 +36,7 @@ beforeAll(() => {
 	run("node", ["scripts/stage.mjs"], webDir);
 });
 
-test("production stage ships separate CSS and JavaScript assets with gzip sidecars", () => {
+test("production stage ships separate CSS and JavaScript assets only as gzip", () => {
 	const html = readFileSync(path.join(webDir, "dist/index.html"), "utf8");
 	const cssAssets = [...html.matchAll(/href=["']([^"']+\.css)["']/g)].map(
 		(match) => match[1],
@@ -52,11 +52,13 @@ test("production stage ships separate CSS and JavaScript assets with gzip sideca
 		const relativePath = new URL(asset, "http://esp32.local/").pathname.slice(
 			1,
 		);
-		for (const directory of [path.join(webDir, "dist"), stagedDir]) {
-			const assetPath = path.join(directory, relativePath);
-			expect(existsSync(assetPath)).toBe(true);
-			expect(existsSync(`${assetPath}.gz`)).toBe(true);
-		}
+		const distPath = path.join(webDir, "dist", relativePath);
+		expect(existsSync(distPath)).toBe(true);
+		expect(existsSync(`${distPath}.gz`)).toBe(true);
+		// O firmware serve sempre o .gz (ADR-0010): o original não vai para o LittleFS.
+		const stagedPath = path.join(stagedDir, relativePath);
+		expect(existsSync(`${stagedPath}.gz`)).toBe(true);
+		expect(existsSync(stagedPath)).toBe(false);
 	}
 	expect(treeBytes(stagedDir)).toBeLessThanOrEqual(448 * 1024);
 });

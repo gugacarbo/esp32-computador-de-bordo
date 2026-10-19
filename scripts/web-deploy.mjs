@@ -33,6 +33,7 @@ const skipFw = args.has("--skip-fw");
 const ota = args.has("--ota");
 const uploadEnv = ota ? "ota" : "esp32doit-devkit-v1";
 const otaHost = "192.168.4.1"; // upload_port do env `ota`
+const otaSsid = "Onix-MVP"; // ONIX_AP_SSID em apps/firmware/include/config.h
 // Partição LittleFS de 512 KB (partitions_ota.csv); a folga cobre os metadados do LittleFS.
 const budgetBytes = (budgetArg ? Number(budgetArg) : 448) * 1024;
 
@@ -64,17 +65,36 @@ function resolvePio() {
 // Após uma gravação OTA a placa reinicia e o host perde o SoftAP; espota não tenta de novo,
 // então a próxima gravação só começa quando o HTTP da placa voltar a responder.
 async function waitForBoard(timeoutMs = 90_000) {
-	const deadline = Date.now() + timeoutMs;
-	while (Date.now() < deadline) {
+	const startedAt = Date.now();
+	let lastReconnectS = 0;
+	console.log(`aguardando a placa em http://${otaHost} (o host precisa estar na rede ${otaSsid})...`);
+	while (Date.now() - startedAt < timeoutMs) {
 		try {
 			const response = await fetch(`http://${otaHost}/api/data`, { signal: AbortSignal.timeout(2000) });
-			if (response.ok) return;
+			if (response.ok) {
+				console.log(`placa respondeu após ${Math.round((Date.now() - startedAt) / 1000)} s`);
+				return;
+			}
 		} catch {
 			// placa reiniciando ou host ainda reconectando ao SoftAP
 		}
+		const elapsedS = Math.round((Date.now() - startedAt) / 1000);
+		console.log(`  sem resposta (${elapsedS} s)`);
+		// Com o SoftAP fora do ar durante o reboot, o NetworkManager marca `ssid-not-found` e
+		// para de tentar; reativa a conexão a cada ~15 s (sem efeito onde não houver nmcli).
+		if (elapsedS >= lastReconnectS + 15) {
+			lastReconnectS = elapsedS;
+			const result = spawnSync("nmcli", ["connection", "up", "id", otaSsid], {
+				stdio: "ignore",
+				timeout: 30_000,
+			});
+			if (!result.error) console.log(`  nmcli: reativando a conexão ${otaSsid}`);
+		}
 		await new Promise((resolve) => setTimeout(resolve, 2000));
 	}
-	fail(`placa não respondeu em ${otaHost} após ${timeoutMs / 1000} s — reconecte o host ao SoftAP`);
+	fail(
+		`placa não respondeu em ${otaHost} após ${timeoutMs / 1000} s — conecte o host à rede ${otaSsid} (Wi-Fi do ESP32) e tente de novo`,
+	);
 }
 
 function treeSize(directory) {

@@ -90,11 +90,11 @@
     "path": "docs/adr/0008-serve-painel-com-assets-estaticos-compactados.md",
     "layer": "adr",
     "title": "Serve painel com assets estáticos compactados",
-    "status": "accepted",
+    "status": "superseded",
     "builds-on": [
       "ADR-0007"
     ],
-    "superseded-by": null,
+    "superseded-by": "ADR-0010",
     "implemented-by": []
   },
   {
@@ -107,6 +107,32 @@
       "ADR-0002",
       "ADR-0004",
       "ADR-0008"
+    ],
+    "superseded-by": null,
+    "implemented-by": []
+  },
+  {
+    "id": "ADR-0010",
+    "path": "docs/adr/0010-serve-assets-do-painel-somente-em-gzip.md",
+    "layer": "adr",
+    "title": "Serve assets do painel somente em gzip",
+    "status": "accepted",
+    "builds-on": [
+      "ADR-0008",
+      "ADR-0009"
+    ],
+    "superseded-by": null,
+    "implemented-by": []
+  },
+  {
+    "id": "ADR-0011",
+    "path": "docs/adr/0011-registra-logs-do-firmware-em-buffer-circular-exposto-por-http.md",
+    "layer": "adr",
+    "title": "Registra logs do firmware em buffer circular exposto por HTTP",
+    "status": "accepted",
+    "builds-on": [
+      "ADR-0004",
+      "ADR-0009"
     ],
     "superseded-by": null,
     "implemented-by": []
@@ -134,6 +160,7 @@
     "builds-on": [
       "ADR-0004",
       "ADR-0005",
+      "ADR-0011",
       "SPEC-0001"
     ],
     "superseded-by": null,
@@ -147,6 +174,7 @@
     "status": "accepted",
     "builds-on": [
       "ADR-0008",
+      "ADR-0010",
       "SPEC-0002"
     ],
     "superseded-by": null,

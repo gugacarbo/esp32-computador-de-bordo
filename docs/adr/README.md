@@ -11,5 +11,7 @@
 | [ADR-0005](0005-serve-painel-offline-por-http-com-polling.md) | Serve painel offline por HTTP com polling | superseded |
 | [ADR-0006](0006-move-o-firmware-para-apps-firmware.md) | Move o firmware para apps/firmware | accepted |
 | [ADR-0007](0007-serve-painel-react-por-littlefs-com-websocket.md) | Serve painel React por LittleFS com WebSocket | superseded |
-| [ADR-0008](0008-serve-painel-com-assets-estaticos-compactados.md) | Serve painel com assets estáticos compactados | accepted |
+| [ADR-0008](0008-serve-painel-com-assets-estaticos-compactados.md) | Serve painel com assets estáticos compactados | superseded |
 | [ADR-0009](0009-habilita-atualizacao-ota-por-wi-fi-com-arduinoota.md) | Habilita atualização OTA por Wi-Fi com ArduinoOTA | accepted |
+| [ADR-0010](0010-serve-assets-do-painel-somente-em-gzip.md) | Serve assets do painel somente em gzip | accepted |
+| [ADR-0011](0011-registra-logs-do-firmware-em-buffer-circular-exposto-por-http.md) | Registra logs do firmware em buffer circular exposto por HTTP | accepted |

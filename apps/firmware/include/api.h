@@ -9,6 +9,7 @@
 #include <vector>
 
 #include "config.h"
+#include "log.h"
 #include "snapshot.h"
 
 namespace onix {
@@ -39,6 +40,7 @@ struct HttpResponse {
 
 constexpr char API_ROUTE_ROOT[] = "/";
 constexpr char API_ROUTE_DATA[] = "/api/data";
+constexpr char API_ROUTE_LOGS[] = "/api/logs";
 
 // Base monotônica em milissegundos desde o boot (esp_timer no ESP32, steady_clock no host).
 // É a mesma base de `uptimeMs`, `updatedAtMs`, `ageMs` e das janelas de saúde/frescor.
@@ -86,10 +88,12 @@ std::string serializeSnapshotJson(const Snapshot& snapshot, const TimingConfig& 
 class ApiRouter {
  public:
   ApiRouter(const SnapshotStore& store, const TimingConfig& timing, const char* dashboardHtml,
-            UptimeProvider uptime = nullptr, void* uptimeContext = nullptr);
+            UptimeProvider uptime = nullptr, void* uptimeContext = nullptr,
+            const LogBuffer* logs = nullptr);
 
   // GET /           -> 200 text/html; charset=utf-8 + HTML do painel (dashboard.h)
   // GET /api/data   -> 200 application/json + Cache-Control: no-store
+  // GET /api/logs   -> 200 application/json + Cache-Control: no-store (buffer de log; vazio se não houver buffer)
   // método != GET em rota conhecida -> 405, sem ler o snapshot
   // rota desconhecida -> 404, sem ler o snapshot
   HttpResponse handle(const HttpRequest& request) const;
@@ -102,12 +106,16 @@ class ApiRouter {
   // duplicar serialização em main.cpp.
   std::string buildDataJson() const;
 
+  // Corpo de GET /api/logs: copia as entradas do buffer e serializa fora do mutex do buffer.
+  std::string buildLogsJson() const;
+
  private:
   const SnapshotStore& store_;
   const TimingConfig& timing_;
   const char* dashboardHtml_;
   UptimeProvider uptime_;
   void* uptimeContext_;
+  const LogBuffer* logs_;
 };
 
 }  // namespace onix

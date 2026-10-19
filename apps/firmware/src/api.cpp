@@ -82,7 +82,13 @@ std::string serializeSnapshotJson(const Snapshot& s,const TimingConfig& t,uint64
 }
 bool HttpResponse::hasHeader(const std::string& name)const {for(const auto& h:headers)if(h.name==name)return true;return false;}
 std::string HttpResponse::headerValue(const std::string& name)const {for(const auto& h:headers)if(h.name==name)return h.value;return {};}
-ApiRouter::ApiRouter(const SnapshotStore& s,const TimingConfig& t,const char* html,UptimeProvider u,void* ctx):store_(s),timing_(t),dashboardHtml_(html),uptime_(u),uptimeContext_(ctx){}
+ApiRouter::ApiRouter(const SnapshotStore& s,const TimingConfig& t,const char* html,UptimeProvider u,void* ctx,const LogBuffer* logs):store_(s),timing_(t),dashboardHtml_(html),uptime_(u),uptimeContext_(ctx),logs_(logs){}
+std::string ApiRouter::buildLogsJson()const {
+ const auto now=uptime_ ? uptime_(uptimeContext_) : monotonicUptimeMs();
+ // Sem buffer injetado, a rota responde com lista vazia (os testes e builds sem log usam isso).
+ if(!logs_) return serializeLogsJson(std::vector<LogEntry>(),0,now);
+ return serializeLogsJson(logs_->snapshot(),logs_->droppedCount(),now);
+}
 std::string ApiRouter::buildDataJson()const {
  const auto copy=store_.copy();
  const auto now=uptime_ ? uptime_(uptimeContext_) : monotonicUptimeMs();
@@ -90,9 +96,10 @@ std::string ApiRouter::buildDataJson()const {
 }
 HttpResponse ApiRouter::handle(const HttpRequest& req)const {
  HttpResponse response;
- if(req.path!="/" && req.path!="/api/data")return {404,ONIX_CONTENT_TYPE_TEXT,{},"Not found"};
+ if(req.path!="/" && req.path!="/api/data" && req.path!="/api/logs")return {404,ONIX_CONTENT_TYPE_TEXT,{},"Not found"};
  if(req.method!=HttpMethod::Get)return {405,ONIX_CONTENT_TYPE_TEXT,{{"Allow","GET"}},"Method not allowed"};
  if(req.path=="/")return {200,ONIX_CONTENT_TYPE_HTML,{},dashboardHtml_ ? dashboardHtml_ : ""};
+ if(req.path=="/api/logs")return {200,ONIX_CONTENT_TYPE_JSON,{{ONIX_HEADER_CACHE_CONTROL,ONIX_CACHE_CONTROL_NO_STORE}},buildLogsJson()};
  return {200,ONIX_CONTENT_TYPE_JSON,{{ONIX_HEADER_CACHE_CONTROL,ONIX_CACHE_CONTROL_NO_STORE}},buildDataJson()};
 }
 }
