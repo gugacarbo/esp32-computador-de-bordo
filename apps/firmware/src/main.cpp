@@ -579,6 +579,10 @@ void setup() {
     ONIX_LOGI("fs", "LittleFS montado");
   }
 
+  // POST /api/obd/reconnect (ADR-0013): o roteador só sinaliza; a task OBD retoma a busca no
+  // próprio contexto (requestObdReconnect usa um atômico, a sessão nunca é tocada daqui).
+  g_apiRouter.setObdReconnectHandler([](void*) { onix::requestObdReconnect(); }, nullptr);
+
   // Rotas em HTTP_ANY (padrão do on(uri, fn)): o handler é chamado para QUALQUER método e o
   // ApiRouter responde 405 para não-GET; rotas desconhecidas caem em onNotFound -> 404
   // (ou estático do LittleFS, se existir).
@@ -586,6 +590,7 @@ void setup() {
   g_server.on(onix::API_ROUTE_DATA, handleWithApiRouter);
   g_server.on(onix::API_ROUTE_LOGS, handleWithApiRouter);
   g_server.on(onix::API_ROUTE_WIFI, handleWithApiRouter);
+  g_server.on(onix::API_ROUTE_OBD_RECONNECT, handleWithApiRouter);
   g_server.onNotFound(handleWithApiRouter);
   g_server.begin();
   ONIX_LOGI("http", "porta %u", static_cast<unsigned>(onix::ONIX_HTTP_PORT));
@@ -595,18 +600,32 @@ void setup() {
   ONIX_LOGI("ws", "porta %u (broadcast a cada %lu ms)", static_cast<unsigned>(onix::ONIX_WS_PORT),
             static_cast<unsigned long>(onix::ONIX_WS_BROADCAST_MS));
 
-  // Task OBD única, pinada ao núcleo ONIX_OBD_TASK_CORE (1), longe do IDLE0. O task WDT do
-  // ESP32 vigia o IDLE0 (panic=y, 5 s): o ELMduino faz busy-wait de até 30 s durante a busca
-  // de protocolo (sendCommand_Blocking), o que travaria o IDLE0 e dispararia o reset. O loop
-  // HTTP/WebSocket fica no núcleo 1 ao lado da task OBD. Stack e prioridade vêm de config.h.
-  // Falha na criação é logada; o HTTP segue de pé.
+  // Task OBD única (ADR-0004), pinada ao núcleo ONIX_OBD_TASK_CORE (0), junto das pilhas Wi-Fi
+  // e Bluetooth. Layout: o núcleo 0 roda OBD/BT; o núcleo 1 roda só o loop() (HTTP/WS/OTA).
+  // Prioridades maiores (Wi-Fi 23, tcpip 18, Bluedroid) preemptam a task OBD (prio 1). O ELMduino
+  // faz busy-wait de até 30 s sem yield na busca de protocolo (sendCommand_Blocking) e, com prio 1,
+  // starvaria o IDLE0 do núcleo 0; por isso o task WDT do IDLE0 é desligado aqui. Trade-off: sem
+  // vigilância do IDLE0, um travamento do núcleo 0 não reinicia mais a placa pelo WDT.
+  // Stack e prioridade vêm de config.h. Falha na criação é logada; o HTTP segue de pé.
+#if !defined(ONIX_DISABLE_OBD)
+  if (onix::ONIX_OBD_TASK_CORE == 0) {
+    disableCore0WDT();
+  }
   const BaseType_t created =
       xTaskCreatePinnedToCore(obdTask, "onix-obd", onix::ONIX_OBD_TASK_STACK_SIZE,
                               &g_snapshotStore, onix::ONIX_OBD_TASK_PRIORITY, &g_obdTaskHandle,
                               onix::ONIX_OBD_TASK_CORE);
   if (created != pdPASS) {
     ONIX_LOGE("obd", "falha ao criar a task OBD");
+  } else {
+    ONIX_LOGI("obd", "task no núcleo %u", static_cast<unsigned>(onix::ONIX_OBD_TASK_CORE));
   }
+#else
+  // Variante de medição (env esp32-no-obd): existe só para medir Wi-Fi/HTTP sem o rádio BT.
+  // Sem BT, a economia de energia do Wi-Fi pode ser desligada.
+  ONIX_LOGW("obd", "task OBD desativada (ONIX_DISABLE_OBD)");
+  WiFi.setSleep(false);
+#endif
 
   setupOta();
 }

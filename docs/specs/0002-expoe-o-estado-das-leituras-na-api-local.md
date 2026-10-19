@@ -1,7 +1,7 @@
 ---
 status: accepted
 date: 2026-10-13
-builds-on: [ADR-0004, ADR-0005, ADR-0011, ADR-0012, SPEC-0001]
+builds-on: [ADR-0004, ADR-0005, ADR-0011, ADR-0012, SPEC-0001, ADR-0013]
 implemented-by: []
 ---
 
@@ -53,13 +53,17 @@ pendente, não uma implementação no app Bun.
   HTTP 500 `storage`, com os mesmos efeitos de falha de `POST`.
 - Respostas de `/api/wifi`, inclusive erros no formato `{"ok":false,"error":"..."}`, usam
   `Cache-Control: no-store`. Sem a porta de configuração injetada, a rota responde 404.
+- `POST /api/obd/reconnect`: sem corpo. Retoma a busca pelo scanner Bluetooth parada após
+  `ONIX_BT_MAX_CONNECT_ATTEMPTS` falhas seguidas (ADR-0013) e responde HTTP 202 `{"ok":true}`, com
+  `Cache-Control: no-store`; sem o manipulador injetado, HTTP 503 `{"ok":false}`. Outro método recebe
+  HTTP 405 com `Allow: POST`. Não exige senha: só dispara uma nova tentativa de conexão.
 - Falta de dados, scanner ou ECU é estado do JSON, não erro HTTP do recurso disponível.
 - Caminho inexistente: HTTP 404. Método diferente de GET nas rotas conhecidas: HTTP 405, sem efeitos.
   Em `/api/wifi`, método diferente de GET, POST ou DELETE recebe HTTP 405 com `Allow: GET, POST, DELETE`.
 - Não há autenticação de aplicação para leitura; `POST` e `DELETE` de `/api/wifi` exigem a senha do
   OTA. Todo acesso exige conexão à rede local protegida pela senha do SoftAP ou do hotspot.
 - Não há CORS para outras origens, consulta arbitrária ou escrita no veículo; a única escrita de
-  configuração é `/api/wifi`.
+  configuração é `/api/wifi`, e `/api/obd/reconnect` só altera o estado da busca Bluetooth.
 
 ### Envelope JSON
 
@@ -70,6 +74,7 @@ pendente, não uma implementação no app Bun.
   "adapterReady": true,
   "ecuResponding": true,
   "obdConnected": true,
+  "btSearchStopped": false,
   "rpm": {
     "value": 842,
     "valid": true,
@@ -163,23 +168,24 @@ em `valid`, em vez de reconstruir a política a partir de timestamps.
 
 ## Casos de borda
 
-| #   | QUANDO                                                     | O sistema DEVE                                                                              |
-| --- | ---------------------------------------------------------- | ------------------------------------------------------------------------------------------- |
-| 1   | A API é consultada antes da primeira leitura               | Responder 200 com todos os sensores, valores e tempos nulos, `valid: false`.                |
-| 2   | O sensor leu zero                                          | Retornar número zero com validade, não `null` nem ausência de dado.                         |
-| 3   | Um sensor falha após uma leitura bem-sucedida              | Conservar valor e timestamp; marcar timeout/erro e atualizar a idade.                       |
-| 4   | A leitura expira com o produtor bloqueado                  | Responder com validade falsa e estado calculado a partir da cópia e do relógio atual.       |
-| 5   | Bluetooth cai ou a ECU deixa de responder                  | Refletir as fases corretas; invalidar apenas sensores cuja origem está indisponível.        |
-| 6   | Um PID não é suportado                                     | Manter o campo presente e o estado `unsupported`.                                           |
-| 7   | HTTP ocorre simultaneamente a uma atualização OBD          | Publicar uma cópia coerente, sem campos parcialmente atualizados ou mutex durante envio.    |
-| 8   | A placa reinicia ou o contador de 32 bits cruza seu limite | Não retornar valores de outro boot, idades negativas nem expiração incorreta por rollover.  |
-| 9   | A tensão vem do adaptador com ECU indisponível             | Identificar `source: adapter`; não declarar a ECU saudável por essa leitura.                |
-| 10  | O cliente usa rota desconhecida ou método não permitido    | Responder 404 ou 405, respectivamente, sem enviar comandos OBD.                             |
-| 11  | O adaptador está ausente ou em inicialização demorada      | Continuar respondendo com estado offline sem aguardar conexão ou consulta ao carro.         |
-| 12  | O buffer de log está cheio ou o cliente pede `/api/logs`   | Sobrescrever a entrada mais antiga, contar em `dropped` e responder sem esperar a task OBD. |
-| 13  | `POST` ou `DELETE` de `/api/wifi` com senha do OTA errada  | Responder 403 `forbidden`, sem gravar na NVS e sem reiniciar a placa.                       |
-| 14  | O hotspot cadastrado não está presente no boot             | Subir o SoftAP `Onix-MVP` após 15 s e buscar o hotspot de novo a cada 20 s, sem clientes.   |
-| 15  | Os IPs `.50`–`.59` estão todos ocupados na rede do celular | Manter o IP obtido por DHCP e servir a API nele, sem interromper a conexão.                 |
+| #   | QUANDO                                                             | O sistema DEVE                                                                                                |
+| --- | ------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------- |
+| 1   | A API é consultada antes da primeira leitura                       | Responder 200 com todos os sensores, valores e tempos nulos, `valid: false`.                                  |
+| 2   | O sensor leu zero                                                  | Retornar número zero com validade, não `null` nem ausência de dado.                                           |
+| 3   | Um sensor falha após uma leitura bem-sucedida                      | Conservar valor e timestamp; marcar timeout/erro e atualizar a idade.                                         |
+| 4   | A leitura expira com o produtor bloqueado                          | Responder com validade falsa e estado calculado a partir da cópia e do relógio atual.                         |
+| 5   | Bluetooth cai ou a ECU deixa de responder                          | Refletir as fases corretas; invalidar apenas sensores cuja origem está indisponível.                          |
+| 6   | Um PID não é suportado                                             | Manter o campo presente e o estado `unsupported`.                                                             |
+| 7   | HTTP ocorre simultaneamente a uma atualização OBD                  | Publicar uma cópia coerente, sem campos parcialmente atualizados ou mutex durante envio.                      |
+| 8   | A placa reinicia ou o contador de 32 bits cruza seu limite         | Não retornar valores de outro boot, idades negativas nem expiração incorreta por rollover.                    |
+| 9   | A tensão vem do adaptador com ECU indisponível                     | Identificar `source: adapter`; não declarar a ECU saudável por essa leitura.                                  |
+| 10  | O cliente usa rota desconhecida ou método não permitido            | Responder 404 ou 405, respectivamente, sem enviar comandos OBD.                                               |
+| 11  | O adaptador está ausente ou em inicialização demorada              | Continuar respondendo com estado offline sem aguardar conexão ou consulta ao carro.                           |
+| 12  | O buffer de log está cheio ou o cliente pede `/api/logs`           | Sobrescrever a entrada mais antiga, contar em `dropped` e responder sem esperar a task OBD.                   |
+| 13  | `POST` ou `DELETE` de `/api/wifi` com senha do OTA errada          | Responder 403 `forbidden`, sem gravar na NVS e sem reiniciar a placa.                                         |
+| 14  | O hotspot cadastrado não está presente no boot                     | Subir o SoftAP `Onix-MVP` após 15 s e buscar o hotspot de novo a cada 20 s, sem clientes.                     |
+| 15  | Os IPs `.50`–`.59` estão todos ocupados na rede do celular         | Manter o IP obtido por DHCP e servir a API nele, sem interromper a conexão.                                   |
+| 16  | O scanner não aparece em `ONIX_BT_MAX_CONNECT_ATTEMPTS` tentativas | Parar a busca, publicar `btSearchStopped: true` e só tentar de novo após `POST /api/obd/reconnect` ou reboot. |
 
 ## Questões em aberto
 

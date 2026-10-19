@@ -43,6 +43,7 @@ struct Snapshot {
   uint64_t lastEcuResponseMs = 0;
   VoltageSource voltageSource = VoltageSource::Adapter;
   std::array<SensorReading, SENSOR_COUNT> sensors{};
+  bool btSearchStopped = false;  // busca Bluetooth parada após N falhas seguidas; só POST /api/obd/reconnect retoma
 };
 
 // Índice do array `sensors` para um SensorId. Não use SensorId::Count.

@@ -338,6 +338,7 @@ class Elm327BtTransport : public ObdTransport {
 
 namespace {
 std::atomic<bool> g_obdPaused{false};
+std::atomic<bool> g_obdReconnectRequested{false};
 }  // namespace
 
 void setObdPaused(bool paused) {
@@ -347,6 +348,10 @@ void setObdPaused(bool paused) {
     // BT ativa, a chamada só retorna erro.
     esp_bt_gap_cancel_discovery();
   }
+}
+
+void requestObdReconnect() {
+  g_obdReconnectRequested.store(true);  // a task OBD consome o pedido no topo do loop
 }
 
 void runObdTask(SnapshotStore& store) {
@@ -364,6 +369,9 @@ void runObdTask(SnapshotStore& store) {
 
   uint64_t nextStackLogMs = monotonicUptimeMs() + kStackLogPeriodMs;
   for (;;) {
+    if (g_obdReconnectRequested.exchange(false)) {
+      session.requestReconnect();  // só a task OBD toca na sessão
+    }
     if (g_obdPaused.load()) {
       vTaskDelay(pdMS_TO_TICKS(100));  // OTA em andamento: rádio livre para o Wi-Fi
       continue;

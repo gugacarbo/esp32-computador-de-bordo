@@ -16,3 +16,4 @@
 | [ADR-0010](0010-serve-assets-do-painel-somente-em-gzip.md) | Serve assets do painel somente em gzip | accepted |
 | [ADR-0011](0011-registra-logs-do-firmware-em-buffer-circular-exposto-por-http.md) | Registra logs do firmware em buffer circular exposto por HTTP | accepted |
 | [ADR-0012](0012-conecta-ao-hotspot-do-celular-com-fallback-para-o-softap.md) | Conecta ao hotspot do celular com fallback para o SoftAP | accepted |
+| [ADR-0013](0013-isola-obd-no-nucleo-0-e-para-a-busca-bluetooth-apos-falhas.md) | Isola OBD no núcleo 0 e para a busca Bluetooth após falhas | accepted |

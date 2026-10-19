@@ -44,6 +44,8 @@ export interface TelemetryEnvelope {
 	adapterReady: boolean;
 	ecuResponding: boolean;
 	obdConnected: boolean;
+	/** A placa desistiu de buscar o scanner BT após várias tentativas. */
+	btSearchStopped: boolean;
 	rpm: SensorReading;
 	speedKph: SensorReading;
 	coolantC: SensorReading;
@@ -115,6 +117,11 @@ export function asEnvelope(data: unknown): TelemetryEnvelope | null {
 	]) {
 		if (typeof record[flag] !== "boolean") return null;
 	}
+	// Campo ausente vem de firmware antigo: tratado como busca não parada.
+	const searchStoppedRaw = record["btSearchStopped"];
+	const searchStopped =
+		searchStoppedRaw === undefined ? false : searchStoppedRaw;
+	if (typeof searchStopped !== "boolean") return null;
 	const readings: Record<SensorKey, SensorReading> = {} as Record<
 		SensorKey,
 		SensorReading
@@ -134,6 +141,7 @@ export function asEnvelope(data: unknown): TelemetryEnvelope | null {
 		adapterReady: record["adapterReady"] as boolean,
 		ecuResponding: record["ecuResponding"] as boolean,
 		obdConnected: record["obdConnected"] as boolean,
+		btSearchStopped: searchStopped,
 		rpm: readings["rpm"],
 		speedKph: readings["speedKph"],
 		coolantC: readings["coolantC"],

@@ -26,8 +26,17 @@ std::vector<uint32_t> collectRecoveryWaits(ObdHarness& h, int attempts) {
   return waits;
 }
 
+// Uma tentativa de conexão no instante liberado pelo backoff (ou agora, se já liberado).
+void tentaConexaoQuandoLiberada(ObdHarness& h) {
+  if (h.session.nextAttemptMs() > h.clock.now()) {
+    h.clock.set(h.session.nextAttemptMs());
+  }
+  h.step();
+}
+
 void test_recuperacao_cresce_e_respeita_teto() {
-  ObdHarness h;
+  // Sem limite de tentativas (0): o backoff precisa chegar ao teto de recuperação (SPEC-0001).
+  ObdHarness h(defaultTimingConfig(), ONIX_DEFAULT_VOLTAGE_SOURCE, ObdLogLevel::Transition, 0);
   h.transport.onConnect(false, false);
   const TimingConfig t = defaultTimingConfig();
 
@@ -43,6 +52,7 @@ void test_recuperacao_cresce_e_respeita_teto() {
   }
   TEST_ASSERT_EQUAL_UINT32(t.recoveryMaxMs, waits.back());
   TEST_ASSERT_EQUAL_UINT32(8, h.transport.count(FakeCall::Kind::Connect));
+  TEST_ASSERT_FALSE(h.session.searchStopped());
 }
 
 void test_sem_tentativas_continuas() {
@@ -236,6 +246,78 @@ void test_nova_sessao_sem_mapa_nao_herda_nao_suportado() {
   TEST_ASSERT_TRUE(h.transport.countPid(0x0B) > 0);
 }
 
+// Busca parada após ONIX_BT_MAX_CONNECT_ATTEMPTS falhas seguidas de connect (painel decide retomar).
+void test_busca_para_apos_max_falhas_e_nao_tenta_mais() {
+  ObdHarness h;
+  h.transport.onConnect(false, false);
+
+  for (uint32_t i = 0; i < ONIX_BT_MAX_CONNECT_ATTEMPTS - 1; ++i) {
+    tentaConexaoQuandoLiberada(h);
+  }
+  TEST_ASSERT_FALSE(h.session.searchStopped());
+
+  tentaConexaoQuandoLiberada(h);
+  TEST_ASSERT_TRUE(h.session.searchStopped());
+  TEST_ASSERT_TRUE(h.session.snapshot().btSearchStopped);
+  TEST_ASSERT_EQUAL_UINT32(1, h.log.count("busca parada apos 5 tentativas"));
+
+  const uint32_t connectsAtStop = h.transport.count(FakeCall::Kind::Connect);
+  h.runMs(600000);  // dez minutos: bem além de qualquer espera de recuperação
+  TEST_ASSERT_EQUAL_UINT32(connectsAtStop, h.transport.count(FakeCall::Kind::Connect));
+  TEST_ASSERT_TRUE(h.session.searchStopped());
+  TEST_ASSERT_EQUAL_INT(static_cast<int>(ObdPhase::Disconnected),
+                        static_cast<int>(h.session.phase()));
+}
+
+// requestReconnect limpa a parada e a próxima step() tenta conectar no mesmo instante.
+void test_requestReconnect_retoma_busca_na_hora() {
+  ObdHarness h;
+  h.transport.onConnect(false, false);
+  for (uint32_t i = 0; i < ONIX_BT_MAX_CONNECT_ATTEMPTS; ++i) {
+    tentaConexaoQuandoLiberada(h);
+  }
+  TEST_ASSERT_TRUE(h.session.searchStopped());
+  h.runMs(60000);
+  const uint32_t connectsBefore = h.transport.count(FakeCall::Kind::Connect);
+
+  h.transport.restoreTransport();
+  h.session.requestReconnect();
+  TEST_ASSERT_FALSE(h.session.searchStopped());
+  TEST_ASSERT_FALSE(h.session.snapshot().btSearchStopped);
+
+  const uint64_t at = h.clock.now();
+  h.step();  // sem avançar o relógio: a tentativa é imediata
+  TEST_ASSERT_EQUAL_UINT32(connectsBefore + 1, h.transport.count(FakeCall::Kind::Connect));
+  TEST_ASSERT_EQUAL_UINT64(at, h.transport.calls.back().atMs);  // connect no instante do pedido
+  TEST_ASSERT_TRUE(h.session.snapshot().btConnected);
+  TEST_ASSERT_EQUAL_UINT32(1, h.log.count("reconexao solicitada"));
+}
+
+// Um connect bem-sucedido zera a contagem: 4 falhas, 1 sucesso e 4 falhas não param a busca.
+void test_sucesso_zera_contagem_de_falhas() {
+  ObdHarness h;
+  h.transport.onConnect(false, false);
+  for (uint32_t i = 0; i < ONIX_BT_MAX_CONNECT_ATTEMPTS - 1; ++i) {
+    tentaConexaoQuandoLiberada(h);
+  }
+
+  h.transport.onConnect(true, true);
+  tentaConexaoQuandoLiberada(h);
+  TEST_ASSERT_TRUE(h.session.snapshot().btConnected);
+
+  h.transport.cutTransport();  // scanner some: a sessão cai; a falha de init não conta como connect
+  h.step();
+  TEST_ASSERT_FALSE(h.session.snapshot().btConnected);
+
+  for (uint32_t i = 0; i < ONIX_BT_MAX_CONNECT_ATTEMPTS - 1; ++i) {
+    tentaConexaoQuandoLiberada(h);
+  }
+  TEST_ASSERT_FALSE(h.session.searchStopped());
+
+  tentaConexaoQuandoLiberada(h);
+  TEST_ASSERT_TRUE(h.session.searchStopped());
+}
+
 }  // namespace
 
 void runRecoverySuite() {
@@ -249,6 +331,9 @@ void runRecoverySuite() {
   RUN_TEST(test_falha_na_inicializacao_do_adaptador_sem_reconexao_incessante);
   RUN_TEST(test_nova_sessao_limpa_nao_suportado_e_reavalia);
   RUN_TEST(test_nova_sessao_sem_mapa_nao_herda_nao_suportado);
+  RUN_TEST(test_busca_para_apos_max_falhas_e_nao_tenta_mais);
+  RUN_TEST(test_requestReconnect_retoma_busca_na_hora);
+  RUN_TEST(test_sucesso_zera_contagem_de_falhas);
 }
 
 }  // namespace onix::test

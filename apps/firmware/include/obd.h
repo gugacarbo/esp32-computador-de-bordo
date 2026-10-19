@@ -24,6 +24,7 @@ constexpr uint16_t ONIX_OBD_AT_TIMEOUT_MS = 1000;
 constexpr uint32_t ONIX_OBD_IDLE_WAIT_MS = 200;  // teto da espera cooperativa sem trabalho
 constexpr uint32_t ONIX_OBD_LOG_REPEAT_WINDOW_MS = 5000;  // não repetir a mesma mensagem na janela
 constexpr uint8_t ONIX_OBD_SUPPORT_MAP_MAX_ATTEMPTS = 3;  // tentativas por base, por sessão
+constexpr uint32_t ONIX_OBD_STOPPED_IDLE_MS = 1000;  // espera enquanto a busca BT está parada
 
 struct SensorPidSpec {
   SensorId sensor;
@@ -109,6 +110,7 @@ struct ObdConfig {
   VoltageSource voltageSource = ONIX_DEFAULT_VOLTAGE_SOURCE;
   uint32_t btConnectTimeoutMs = ONIX_BT_CONNECT_TIMEOUT_MS;
   uint32_t adapterInitTimeoutMs = ONIX_BT_INIT_TIMEOUT_MS;
+  uint8_t btMaxConnectAttempts = ONIX_BT_MAX_CONNECT_ATTEMPTS;  // 0 = nunca para de buscar
   ObdLogLevel logLevel = ObdLogLevel::Transition;
 };
 
@@ -148,6 +150,11 @@ class ObdSession {
   uint32_t recoveryWaitMs() const { return recoveryWaitMs_; }   // espera aplicada na última tentativa
   uint64_t nextAttemptMs() const { return nextAttemptMs_; }     // instante liberado para agir
   uint64_t nextDueMs(SensorId id) const { return nextDueMs_[sensorIndex(id)]; }
+  bool searchStopped() const { return snapshot_.btSearchStopped; }  // busca parada após N falhas
+
+  // Retoma a busca Bluetooth: limpa a parada e as falhas, zera o backoff e tenta já no próximo
+  // step(). Chamar com a sessão conectada não a perturba (só agenda a próxima tentativa).
+  void requestReconnect();
 
  private:
   uint64_t nowMs() const;
@@ -183,6 +190,7 @@ class ObdSession {
 
   uint64_t nextAttemptMs_ = 0;
   uint32_t recoveryWaitMs_ = 0;
+  uint8_t connectFailures_ = 0;  // falhas seguidas de transport().connect; zera ao conectar
   uint64_t lastEcuOkMs_ = 0;
   uint32_t lastLogMs_ = 0;
   const char* lastLogLine_ = nullptr;
@@ -204,5 +212,9 @@ void runObdTask(SnapshotStore& store);
 // task para de chamar a sessão no próximo passo, liberando o rádio para o Wi-Fi (OTA, ADR-0009).
 // Diferente de vTaskSuspend, a task nunca para segurando um mutex. Chamável de outra task.
 void setObdPaused(bool paused);
+
+// Pedido de reconexão vindo do painel (POST /api/obd/reconnect, outra task): a task OBD lê o
+// pedido no topo do loop e chama ObdSession::requestReconnect(). Chamável de outra task.
+void requestObdReconnect();
 
 }  // namespace onix

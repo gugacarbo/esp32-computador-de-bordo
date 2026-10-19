@@ -47,6 +47,8 @@ int main() {
   assert(offline.contentType == "application/json");
   assert(offline.headerValue("Cache-Control") == "no-store");
   assert(offline.body.find("\"value\":null") != std::string::npos);
+  // Envelope: btSearchStopped logo após obdConnected (contrato com o painel).
+  assert(offline.body.find("\"obdConnected\":false,\"btSearchStopped\":false") != std::string::npos);
   for (auto key : {"rpm", "speedKph", "coolantC", "throttlePercent", "mapKpa", "voltage"})
     assert(offline.body.find(std::string("\"") + key + "\":") != std::string::npos);
   assert(api.handle({HttpMethod::Post, "/api/data"}).status == 405);
@@ -255,6 +257,27 @@ int main() {
   assert(!parseWifiRequestBody("").has_value());
   assert(!parseWifiRequestBody("   ").has_value());
   assert(!parseWifiRequestBody(R"JSON({"ssid":"X",})JSON").has_value());
+
+  // POST /api/obd/reconnect: 503 sem handler; 202 com handler (chamado uma vez); GET -> 405.
+  ApiRouter apiRecon(store, timing, "<html>ONIX</html>", clockNow, &now);
+  auto noHandler = apiRecon.handle({HttpMethod::Post, API_ROUTE_OBD_RECONNECT});
+  assert(noHandler.status == 503);
+  assert(noHandler.contentType == "application/json");
+  assert(noHandler.body == "{\"ok\":false}");
+  int reconnectCalls = 0;
+  apiRecon.setObdReconnectHandler([](void* context) { ++*static_cast<int*>(context); },
+                                  &reconnectCalls);
+  auto accepted = apiRecon.handle({HttpMethod::Post, API_ROUTE_OBD_RECONNECT});
+  assert(accepted.status == 202);
+  assert(accepted.contentType == "application/json");
+  assert(accepted.headerValue("Cache-Control") == "no-store");
+  assert(accepted.body == "{\"ok\":true}");
+  assert(reconnectCalls == 1);
+  auto getReconnect = apiRecon.handle({HttpMethod::Get, API_ROUTE_OBD_RECONNECT});
+  assert(getReconnect.status == 405);
+  assert(getReconnect.headerValue("Allow") == "POST");
+  assert(reconnectCalls == 1);
+  assert(apiRecon.handle({HttpMethod::Get, "/api/data"}).status == 200);
 
   std::cout << "API and snapshot behavioral tests passed\n";
 }

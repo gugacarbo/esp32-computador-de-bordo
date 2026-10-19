@@ -151,6 +151,20 @@
     "implemented-by": []
   },
   {
+    "id": "ADR-0013",
+    "path": "docs/adr/0013-isola-obd-no-nucleo-0-e-para-a-busca-bluetooth-apos-falhas.md",
+    "layer": "adr",
+    "title": "Isola OBD no núcleo 0 e para a busca Bluetooth após falhas",
+    "status": "accepted",
+    "builds-on": [
+      "ADR-0003",
+      "ADR-0004",
+      "ADR-0012"
+    ],
+    "superseded-by": null,
+    "implemented-by": []
+  },
+  {
     "id": "SPEC-0001",
     "path": "docs/specs/0001-coleta-sensores-obd-e-recupera-a-conexao.md",
     "layer": "specs",
@@ -175,7 +189,8 @@
       "ADR-0005",
       "ADR-0011",
       "ADR-0012",
-      "SPEC-0001"
+      "SPEC-0001",
+      "ADR-0013"
     ],
     "superseded-by": null,
     "implemented-by": []

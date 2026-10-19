@@ -44,6 +44,7 @@ constexpr char API_ROUTE_ROOT[] = "/";
 constexpr char API_ROUTE_DATA[] = "/api/data";
 constexpr char API_ROUTE_LOGS[] = "/api/logs";
 constexpr char API_ROUTE_WIFI[] = "/api/wifi";
+constexpr char API_ROUTE_OBD_RECONNECT[] = "/api/obd/reconnect";
 
 // Base monotônica em milissegundos desde o boot (esp_timer no ESP32, steady_clock no host).
 // É a mesma base de `uptimeMs`, `updatedAtMs`, `ageMs` e das janelas de saúde/frescor.
@@ -52,6 +53,9 @@ uint64_t monotonicUptimeMs();
 
 // Fonte de relógio injetável: os testes usam um relógio controlado (SPEC-0002 DoD).
 using UptimeProvider = uint64_t (*)(void* context);
+
+// Ação sem argumentos disparada pela rota POST (ex.: pedir reconexão à task OBD).
+using ActionHandler = void (*)(void* context);
 
 const char* sensorJsonKey(SensorId id);       // "rpm", "speedKph", ...
 const char* sensorStatusName(SensorStatus s); // "unavailable", ..., "ok"
@@ -106,6 +110,9 @@ class ApiRouter {
   //   outro  -> 405 com Allow: GET, POST, DELETE
   //   Todas as respostas JSON de /api/wifi (inclusive erros {"ok":false,"error":"..."}) levam
   //   Cache-Control: no-store.
+  // /api/obd/reconnect (rota sempre conhecida):
+  //   POST  -> com handler injetado: 202 application/json {"ok":true} + no-store; sem handler: 503 {"ok":false}
+  //   outro -> 405 com Allow: POST
   // método != GET em rota conhecida -> 405, sem ler o snapshot
   // rota desconhecida -> 404, sem ler o snapshot
   HttpResponse handle(const HttpRequest& request) const;
@@ -121,6 +128,9 @@ class ApiRouter {
   // Corpo de GET /api/logs: copia as entradas do buffer e serializa fora do mutex do buffer.
   std::string buildLogsJson() const;
 
+  // Injeta o handler de POST /api/obd/reconnect. Sem handler a rota responde 503.
+  void setObdReconnectHandler(ActionHandler handler, void* context);
+
  private:
   const SnapshotStore& store_;
   const TimingConfig& timing_;
@@ -129,6 +139,8 @@ class ApiRouter {
   void* uptimeContext_;
   const LogBuffer* logs_;
   WifiConfigPort* wifi_;
+  ActionHandler obdReconnect_ = nullptr;
+  void* obdReconnectContext_ = nullptr;
 };
 
 }  // namespace onix

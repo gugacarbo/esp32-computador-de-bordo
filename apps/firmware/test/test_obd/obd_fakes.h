@@ -293,8 +293,9 @@ class ObdHarness {
  public:
   explicit ObdHarness(const TimingConfig& timing = defaultTimingConfig(),
                       VoltageSource voltage = ONIX_DEFAULT_VOLTAGE_SOURCE,
-                      ObdLogLevel logLevel = ObdLogLevel::Transition)
-      : runtime(make(std::move(timing), std::move(voltage), logLevel)),
+                      ObdLogLevel logLevel = ObdLogLevel::Transition,
+                      uint8_t maxConnectAttempts = ONIX_BT_MAX_CONNECT_ATTEMPTS)
+      : runtime(make(std::move(timing), std::move(voltage), logLevel, maxConnectAttempts)),
         session(runtime, publisher) {
     transport.clock = &clock;
     transport.observer = &publisher;
@@ -395,7 +396,8 @@ class ObdHarness {
   ObdSession session;
 
  private:
-  ObdRuntime make(TimingConfig timing, VoltageSource voltage, ObdLogLevel logLevel) {
+  ObdRuntime make(TimingConfig timing, VoltageSource voltage, ObdLogLevel logLevel,
+                  uint8_t maxConnectAttempts) {
     ObdRuntime runtime;
     runtime.transport = &transport;
     runtime.log = &log;
@@ -404,6 +406,7 @@ class ObdHarness {
     runtime.config.timing = timing;
     runtime.config.voltageSource = voltage;
     runtime.config.logLevel = logLevel;
+    runtime.config.btMaxConnectAttempts = maxConnectAttempts;
     return runtime;
   }
 };

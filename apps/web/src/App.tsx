@@ -1,5 +1,6 @@
 import type { ReactElement } from "react";
 import { DiagnosticsPanel } from "./components/DiagnosticsPanel";
+import { ScannerReconnect } from "./components/ScannerReconnect";
 import { SensorCard } from "./components/SensorCard";
 import { Badge } from "./components/ui/badge";
 import { WifiPanel } from "./components/WifiPanel";
@@ -54,6 +55,8 @@ export default function App(): ReactElement {
 				>
 					{PANEL_TEXT[panel]}
 				</section>
+
+				<ScannerReconnect searchStopped={envelope?.btSearchStopped ?? false} />
 
 				<main id="grid" className="grid grid-cols-2 gap-2.5 md:grid-cols-3">
 					{SENSOR_DEFS.map((def) => (

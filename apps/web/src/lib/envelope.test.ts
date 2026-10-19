@@ -92,6 +92,33 @@ describe("parseEnvelopeText", () => {
 		expect(parseEnvelopeText(envelopeJson({ uptimeMs: "9999" }))).toBeNull();
 	});
 
+	test("btSearchStopped: true e false são lidos como estão", () => {
+		expect(
+			parseEnvelopeText(envelopeJson({ btSearchStopped: true }))
+				?.btSearchStopped,
+		).toBe(true);
+		expect(
+			parseEnvelopeText(envelopeJson({ btSearchStopped: false }))
+				?.btSearchStopped,
+		).toBe(false);
+	});
+
+	test("btSearchStopped ausente (firmware antigo) vale false", () => {
+		const legacy = JSON.parse(envelopeJson());
+		delete legacy["btSearchStopped"];
+		expect(asEnvelope(legacy)?.btSearchStopped).toBe(false);
+	});
+
+	test("rejeita btSearchStopped com tipo errado", () => {
+		expect(
+			parseEnvelopeText(envelopeJson({ btSearchStopped: "true" })),
+		).toBeNull();
+		expect(parseEnvelopeText(envelopeJson({ btSearchStopped: 1 }))).toBeNull();
+		expect(
+			parseEnvelopeText(envelopeJson({ btSearchStopped: null })),
+		).toBeNull();
+	});
+
 	test("rejeita sensor ausente ou com status inválido", () => {
 		const missing = JSON.parse(envelopeJson());
 		delete missing["rpm"];

@@ -18,6 +18,7 @@ formato da tabela é apontada pelo comando, nunca lida em silêncio.
 | 0010 | Serve assets do painel somente em gzip                        | 2026-10-19 | em uso   |
 | 0011 | Registra logs do firmware em buffer circular exposto por HTTP | 2026-10-19 | em uso   |
 | 0012 | Conecta ao hotspot do celular com fallback para o SoftAP      | 2026-10-19 | em uso   |
+| 0013 | Isola OBD no núcleo 0 e para a busca Bluetooth após falhas    | 2026-10-19 | em uso   |
 
 ## Reservas Spec
 

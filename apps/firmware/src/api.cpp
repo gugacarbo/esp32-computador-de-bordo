@@ -66,6 +66,7 @@ std::string serializeSnapshotJson(const Snapshot& s,const TimingConfig& t,uint64
  out+=",\"adapterReady\":";out+=boolean(p.adapterReady);
  out+=",\"ecuResponding\":";out+=boolean(p.ecuResponding);
  out+=",\"obdConnected\":";out+=boolean(p.obdConnected);
+ out+=",\"btSearchStopped\":";out+=boolean(s.btSearchStopped);
  for(size_t i=0;i<SENSOR_COUNT;++i) {
   auto id=static_cast<SensorId>(i); const auto& r=s.sensors[i];
   const auto status=resolveSensorStatus(s,id,t,now);
@@ -82,6 +83,7 @@ std::string serializeSnapshotJson(const Snapshot& s,const TimingConfig& t,uint64
 }
 bool HttpResponse::hasHeader(const std::string& name)const {for(const auto& h:headers)if(h.name==name)return true;return false;}
 std::string HttpResponse::headerValue(const std::string& name)const {for(const auto& h:headers)if(h.name==name)return h.value;return {};}
+void ApiRouter::setObdReconnectHandler(ActionHandler handler,void* context){obdReconnect_=handler;obdReconnectContext_=context;}
 ApiRouter::ApiRouter(const SnapshotStore& s,const TimingConfig& t,const char* html,UptimeProvider u,void* ctx,const LogBuffer* logs,WifiConfigPort* wifi):store_(s),timing_(t),dashboardHtml_(html),uptime_(u),uptimeContext_(ctx),logs_(logs),wifi_(wifi){}
 std::string ApiRouter::buildLogsJson()const {
  const auto now=uptime_ ? uptime_(uptimeContext_) : monotonicUptimeMs();
@@ -123,6 +125,13 @@ HttpResponse handleWifi(const HttpRequest& req,WifiConfigPort& wifi){
 }
 HttpResponse ApiRouter::handle(const HttpRequest& req)const {
  HttpResponse response;
+ // /api/obd/reconnect existe sempre: 405 para outros métodos, 503 sem handler, 202 com handler.
+ if(req.path==API_ROUTE_OBD_RECONNECT){
+  if(req.method!=HttpMethod::Post)return {405,ONIX_CONTENT_TYPE_TEXT,{{"Allow","POST"}},"Method not allowed"};
+  if(!obdReconnect_)return {503,ONIX_CONTENT_TYPE_JSON,{{ONIX_HEADER_CACHE_CONTROL,ONIX_CACHE_CONTROL_NO_STORE}},"{\"ok\":false}"};
+  obdReconnect_(obdReconnectContext_);
+  return {202,ONIX_CONTENT_TYPE_JSON,{{ONIX_HEADER_CACHE_CONTROL,ONIX_CACHE_CONTROL_NO_STORE}},"{\"ok\":true}"};
+ }
  // /api/wifi só existe quando há WifiConfigPort injetado; sem ele é rota desconhecida (404).
  const bool wifiRoute=wifi_ && req.path==API_ROUTE_WIFI;
  if(req.path!="/" && req.path!="/api/data" && req.path!="/api/logs" && !wifiRoute)return {404,ONIX_CONTENT_TYPE_TEXT,{},"Not found"};

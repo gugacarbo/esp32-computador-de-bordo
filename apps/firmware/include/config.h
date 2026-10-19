@@ -110,6 +110,9 @@ constexpr uint32_t ONIX_BT_INIT_TIMEOUT_MS = 30000;  // ADR-0004: busca automát
 // A busca ocupa o rádio e derruba o SoftAP enquanto dura, por isso é curta e rara.
 constexpr uint32_t ONIX_BT_DISCOVERY_MS = 5120;
 constexpr uint8_t ONIX_BT_MAC_RETRIES = 3;  // falhas seguidas pelo MAC antes de buscar de novo
+// Falhas seguidas de conexão BT antes de parar a busca (cada uma ocupa o rádio e derruba o Wi-Fi);
+// a busca só volta com POST /api/obd/reconnect (painel) ou reboot.
+constexpr uint8_t ONIX_BT_MAX_CONNECT_ATTEMPTS = 5;
 
 // Protocolo do ELM327: '0' = busca automática; '6' = ISO 15765-4 CAN 11 bit 500 kbps (Onix 2019) pula a busca.
 constexpr char ONIX_OBD_PROTOCOL = '0';
@@ -117,8 +120,9 @@ constexpr char ONIX_OBD_PROTOCOL = '0';
 // Task única de aplicação para OBD (ADR-0004). Usados por main.cpp na criação da task.
 constexpr uint32_t ONIX_OBD_TASK_STACK_SIZE = 8192;
 constexpr uint32_t ONIX_OBD_TASK_PRIORITY = 1;
-// Núcleo 1: o idle do núcleo 0 é vigiado pelo task WDT com panic (5 s) e o ELMduino faz busy-wait
-// sem yield na busca de protocolo.
-constexpr uint32_t ONIX_OBD_TASK_CORE = 1;
+// OBD/BT ficam no núcleo 0 com as pilhas Wi-Fi/BT (prioridades maiores preemptam a task); o
+// núcleo 1 fica só para o loop() (HTTP/WS/OTA). O watchdog do IDLE0 é desligado em main.cpp
+// porque o ELMduino faz busy-wait sem yield na busca de protocolo.
+constexpr uint32_t ONIX_OBD_TASK_CORE = 0;
 
 }  // namespace onix

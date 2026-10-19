@@ -99,9 +99,22 @@ uint32_t ObdSession::nextRecoveryWait() const {
 bool ObdSession::beginSession(uint64_t now) {
   if (!transport().connect(runtime_.config.btConnectTimeoutMs)) {
     logTransition("[bt] falha ao conectar ao scanner");
+    const uint8_t maxAttempts = runtime_.config.btMaxConnectAttempts;
+    if (maxAttempts > 0 && ++connectFailures_ >= maxAttempts) {
+      // Scanner ausente: para de ligar o rádio (cada busca degrada o Wi-Fi) até pedido explícito.
+      snapshot_.btSearchStopped = true;
+      char line[96];
+      std::snprintf(line, sizeof(line), "[bt] busca parada apos %u tentativas; reconecte pelo painel",
+                    static_cast<unsigned>(maxAttempts));
+      if (runtime_.log != nullptr) {
+        runtime_.log->log(ObdLogLevel::Quiet, line);  // sem dedupe: uma vez por parada
+      }
+      return false;
+    }
     armAction(now, nextRecoveryWait());  // `now` pré-chamada: espera exata do backoff
     return false;
   }
+  connectFailures_ = 0;
   snapshot_.btConnected = true;
   mapBaseIndex_ = 0;
   for (std::size_t i = 0; i < OBD_SUPPORT_MAP_COUNT; ++i) {
@@ -111,6 +124,15 @@ bool ObdSession::beginSession(uint64_t now) {
   }
   transition(ObdPhase::Initializing, "[bt] conectado ao scanner");
   return true;
+}
+
+void ObdSession::requestReconnect() {
+  connectFailures_ = 0;
+  snapshot_.btSearchStopped = false;
+  recoveryWaitMs_ = 0;
+  nextAttemptMs_ = nowMs();  // próxima tentativa liberada já (vale só se estiver desconectada)
+  logTransition("[bt] reconexao solicitada");
+  publish();
 }
 
 void ObdSession::adapterReady(uint64_t now) {
@@ -224,6 +246,9 @@ int ObdSession::pickDueSensor(uint64_t now) const {
 }
 
 uint32_t ObdSession::idleWait(uint64_t now) const {
+  if (snapshot_.btSearchStopped) {
+    return ONIX_OBD_STOPPED_IDLE_MS;  // busca parada: nada a agendar até requestReconnect
+  }
   // No Polling, sensor vencido e ainda não servido significa trabalho pendente: o próximo
   // step deve ser imediato (uma transação por step — SPEC-0001 §Polling). Sem isso, a espera
   // de até 200 ms entre vencidos atrasaria a primeira volta completa dos sensores.
@@ -277,6 +302,9 @@ uint32_t ObdSession::step() {
   const uint64_t now = nowMs();
   switch (phase_) {
     case ObdPhase::Disconnected: {
+      if (snapshot_.btSearchStopped) {
+        break;  // busca parada: não chama connect até requestReconnect
+      }
       if (now >= nextAttemptMs_) {
         beginSession(now);
       }
