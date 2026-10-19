@@ -145,6 +145,97 @@ void test_falha_de_conexao_nao_derruba_estado_anterior() {
   TEST_ASSERT_TRUE(h.reading(SensorId::Rpm).hasValue);
 }
 
+// Bluetooth conecta mas o adaptador não inicializa (ex.: carro desligado): a espera cresce como na
+// falha de conexão, sem reconexão Bluetooth incessante (SPEC-0001 §Recuperação).
+void test_falha_na_inicializacao_do_adaptador_aplica_espera_crescente() {
+  ObdHarness h;
+  h.transport.onConnect(true, false);
+  const TimingConfig t = defaultTimingConfig();
+
+  std::vector<uint32_t> waits;
+  for (int i = 0; i < 7; ++i) {
+    h.step();  // conexão Bluetooth bem-sucedida
+    TEST_ASSERT_EQUAL_INT(static_cast<int>(ObdPhase::Initializing),
+                          static_cast<int>(h.session.phase()));
+    h.step();  // inicialização do adaptador falha
+    TEST_ASSERT_EQUAL_INT(static_cast<int>(ObdPhase::Disconnected),
+                          static_cast<int>(h.session.phase()));
+    waits.push_back(h.session.recoveryWaitMs());
+    h.clock.set(h.session.nextAttemptMs());
+  }
+
+  TEST_ASSERT_EQUAL_UINT32(t.recoveryInitialMs, waits[0]);
+  TEST_ASSERT_EQUAL_UINT32(t.recoveryInitialMs * 2, waits[1]);
+  TEST_ASSERT_EQUAL_UINT32(t.recoveryInitialMs * 4, waits[2]);
+  for (std::size_t i = 1; i < waits.size(); ++i) {
+    TEST_ASSERT_TRUE(waits[i] >= waits[i - 1]);
+    TEST_ASSERT_TRUE(waits[i] <= t.recoveryMaxMs);
+  }
+  TEST_ASSERT_EQUAL_UINT32(t.recoveryMaxMs, waits.back());
+}
+
+void test_falha_na_inicializacao_do_adaptador_sem_reconexao_incessante() {
+  ObdHarness h;
+  h.transport.onConnect(true, false);
+
+  h.runMs(60000);
+
+  // Backoff 1+2+4+8+16+30 s: no máximo 7 tentativas no minuto, nunca uma por passo.
+  TEST_ASSERT_TRUE(h.transport.count(FakeCall::Kind::Connect) <= 7);
+  TEST_ASSERT_TRUE(h.transport.count(FakeCall::Kind::Connect) >= 2);
+  TEST_ASSERT_EQUAL_UINT32(h.transport.count(FakeCall::Kind::Connect),
+                           h.transport.count(FakeCall::Kind::AdapterInit));
+}
+
+// Sensor marcado não suportado numa sessão volta a ser avaliado na seguinte (SPEC-0001 §Suporte:
+// "reavaliar suporte após uma nova inicialização bem-sucedida").
+void test_nova_sessao_limpa_nao_suportado_e_reavalia() {
+  ObdHarness h;
+  h.supportPids({0x05, 0x0C, 0x0D, 0x11});  // MAP (0x0B) ausente no mapa
+  h.valuesOk();
+  TEST_ASSERT_TRUE(h.stepUntil(ObdPhase::Polling));
+  TEST_ASSERT_TRUE(h.reading(SensorId::Map).unsupported);
+
+  h.transport.cutTransport();
+  h.step();
+  TEST_ASSERT_FALSE(h.reading(SensorId::Map).unsupported);
+  TEST_ASSERT_NOT_EQUAL(static_cast<int>(SensorStatus::Unsupported),
+                        static_cast<int>(h.reading(SensorId::Map).lastStatus));
+
+  h.transport.restoreTransport();
+  h.supportPids(ObdHarness::allPids());
+  h.runMs(20000);
+
+  TEST_ASSERT_EQUAL_INT(static_cast<int>(ObdPhase::Polling),
+                        static_cast<int>(h.session.phase()));
+  TEST_ASSERT_EQUAL_INT(static_cast<int>(ObdSupport::Supported),
+                        static_cast<int>(h.session.support(SensorId::Map)));
+  TEST_ASSERT_FALSE(h.reading(SensorId::Map).unsupported);
+  TEST_ASSERT_EQUAL_INT(static_cast<int>(SensorStatus::Ok),
+                        static_cast<int>(h.reading(SensorId::Map).lastStatus));
+  TEST_ASSERT_TRUE(h.transport.countPid(0x0B) > 0);
+}
+
+// Falha na leitura do mapa na nova sessão mantém suporte desconhecido, não o "não suportado" antigo.
+void test_nova_sessao_sem_mapa_nao_herda_nao_suportado() {
+  ObdHarness h;
+  h.supportPids({0x05, 0x0C, 0x0D, 0x11});
+  h.valuesOk();
+  TEST_ASSERT_TRUE(h.stepUntil(ObdPhase::Polling));
+  TEST_ASSERT_TRUE(h.reading(SensorId::Map).unsupported);
+
+  h.transport.cutTransport();
+  h.step();
+  h.transport.restoreTransport();
+  h.transport.onMap(0x00, obdTimeout());
+  h.runMs(20000);
+
+  TEST_ASSERT_EQUAL_INT(static_cast<int>(ObdSupport::Unknown),
+                        static_cast<int>(h.session.support(SensorId::Map)));
+  TEST_ASSERT_FALSE(h.reading(SensorId::Map).unsupported);
+  TEST_ASSERT_TRUE(h.transport.countPid(0x0B) > 0);
+}
+
 }  // namespace
 
 void runRecoverySuite() {
@@ -154,6 +245,10 @@ void runRecoverySuite() {
   RUN_TEST(test_desconexao_durante_consulta_invalida_sessao);
   RUN_TEST(test_recuperacao_sem_reboot_reavalia_suporte_e_publica);
   RUN_TEST(test_falha_de_conexao_nao_derruba_estado_anterior);
+  RUN_TEST(test_falha_na_inicializacao_do_adaptador_aplica_espera_crescente);
+  RUN_TEST(test_falha_na_inicializacao_do_adaptador_sem_reconexao_incessante);
+  RUN_TEST(test_nova_sessao_limpa_nao_suportado_e_reavalia);
+  RUN_TEST(test_nova_sessao_sem_mapa_nao_herda_nao_suportado);
 }
 
 }  // namespace onix::test

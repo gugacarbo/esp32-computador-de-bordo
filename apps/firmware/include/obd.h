@@ -159,7 +159,7 @@ class ObdSession {
   void logProtocol();
   void publish();
 
-  void invalidateSession(uint64_t now, const char* reason);
+  void invalidateSession(uint64_t now, const char* reason, uint32_t waitMs = 0);
   bool beginSession(uint64_t now);
   void adapterReady(uint64_t now);
   void armAction(uint64_t now, uint32_t waitMs);

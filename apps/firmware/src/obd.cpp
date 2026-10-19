@@ -115,7 +115,9 @@ bool ObdSession::beginSession(uint64_t now) {
 
 void ObdSession::adapterReady(uint64_t now) {
   if (!transport().adapterInit(runtime_.config.adapterInitTimeoutMs)) {
-    invalidateSession(now, "[bt] inicializacao do adaptador falhou");
+    // Bluetooth de pé mas adaptador sem inicializar (ex.: carro desligado): a próxima tentativa
+    // segue o backoff crescente, sem reconexão Bluetooth incessante (SPEC-0001 §Recuperação).
+    invalidateSession(now, "[bt] inicializacao do adaptador falhou", nextRecoveryWait());
     return;
   }
   snapshot_.adapterReady = true;
@@ -129,11 +131,18 @@ void ObdSession::adapterReady(uint64_t now) {
   logProtocol();
 }
 
-void ObdSession::invalidateSession(uint64_t now, const char* reason) {
+void ObdSession::invalidateSession(uint64_t now, const char* reason, uint32_t waitMs) {
   snapshot_.btConnected = false;
   snapshot_.adapterReady = false;
   snapshot_.hasEcuResponse = false;
   support_.fill(ObdSupport::Unknown);
+  // Suporte volta a desconhecido também no snapshot: a nova sessão reavalia (SPEC-0001 §Suporte).
+  for (SensorReading& reading : snapshot_.sensors) {
+    reading.unsupported = false;
+    if (reading.lastStatus == SensorStatus::Unsupported) {
+      reading.lastStatus = SensorStatus::Unavailable;
+    }
+  }
   nextDueMs_.fill(0);
   mapBaseIndex_ = 0;
   for (std::size_t i = 0; i < OBD_SUPPORT_MAP_COUNT; ++i) {
@@ -143,9 +152,9 @@ void ObdSession::invalidateSession(uint64_t now, const char* reason) {
   }
   lastEcuOkMs_ = 0;
   snapshot_.lastEcuResponseMs = 0;
-  // Perda de transporte permite tentativa imediata; o backoff crescente arma-se se a
+  // Perda de transporte (waitMs = 0) permite tentativa imediata; o backoff crescente arma-se se a
   // reconexão falhar (SPEC-0001 casos 6–7: recolocar o scanner retoma sem espera artificial).
-  armAction(now, 0);
+  armAction(now, waitMs);
   transition(ObdPhase::Disconnected, reason);
 }
 
