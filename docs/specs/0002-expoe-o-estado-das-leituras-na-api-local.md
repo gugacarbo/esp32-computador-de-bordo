@@ -1,7 +1,7 @@
 ---
 status: accepted
 date: 2026-10-13
-builds-on: [ADR-0004, ADR-0005, ADR-0011, SPEC-0001]
+builds-on: [ADR-0004, ADR-0005, ADR-0011, ADR-0012, SPEC-0001]
 implemented-by: []
 ---
 
@@ -31,16 +31,35 @@ pendente, não uma implementação no app Bun.
 
 - SoftAP padrão: SSID `Onix-MVP`, senha `onix1234`, endereço `192.168.4.1`.
 - Centralizar SSID, senha e endereço; informar o endereço efetivo pelo Serial.
+- Hotspot do celular (ADR-0012): com credencial cadastrada, a placa tenta primeiro entrar nesse
+  hotspot como cliente; sem ele, sobe o SoftAP acima. A API responde também no IP obtido no
+  hotspot (DHCP ou faixa fixa `.50`–`.59`); o endereço efetivo de cada rede vai ao Serial e a
+  `/api/logs`.
 - `GET /`: HTTP 200 com `Content-Type: text/html; charset=utf-8`, contendo a interface da SPEC-0003.
 - `GET /api/data`: HTTP 200 com `Content-Type: application/json` e `Cache-Control: no-store`.
 - `GET /api/logs`: HTTP 200 com `Content-Type: application/json` e `Cache-Control: no-store`; corpo
   `{"uptimeMs":N,"dropped":N,"entries":[{"uptimeMs":N,"level":"info","tag":"obd","message":"..."}]}`
   com as últimas entradas do buffer de log em RAM, da mais antiga para a mais nova (ADR-0011).
   `level` é `error`, `warn`, `info` ou `debug`; `dropped` conta entradas sobrescritas desde o boot.
+- `GET /api/wifi`: HTTP 200 com `Content-Type: application/json` e `Cache-Control: no-store`; corpo
+  `{"mode":"station","configured":true,"ssid":"...","ip":"..."}`, com `mode` igual a `connecting`,
+  `station`, `station-lost` ou `access-point`. Nunca inclui a senha (ADR-0012).
+- `POST /api/wifi`: corpo `{"ssid":"...","password":"...","otaPassword":"..."}`. Grava a credencial
+  na NVS, agenda o reinício e responde HTTP 200 `{"ok":true,"restarting":true}`. Erros: HTTP 400 com
+  `invalid-json` ou `invalid-credentials`; HTTP 403 com `forbidden` se `otaPassword` difere de
+  `ONIX_OTA_PASSWORD`; HTTP 500 com `storage` se a NVS falhar.
+- `DELETE /api/wifi`: corpo `{"otaPassword":"..."}`. Remove a credencial, agenda o reinício e responde
+  HTTP 200 `{"ok":true,"restarting":true}`. Erros: HTTP 400 `invalid-json`, HTTP 403 `forbidden` e
+  HTTP 500 `storage`, com os mesmos efeitos de falha de `POST`.
+- Respostas de `/api/wifi`, inclusive erros no formato `{"ok":false,"error":"..."}`, usam
+  `Cache-Control: no-store`. Sem a porta de configuração injetada, a rota responde 404.
 - Falta de dados, scanner ou ECU é estado do JSON, não erro HTTP do recurso disponível.
 - Caminho inexistente: HTTP 404. Método diferente de GET nas rotas conhecidas: HTTP 405, sem efeitos.
-- Não há autenticação de aplicação; acesso exige conexão à rede local protegida pela senha do SoftAP.
-- Não há CORS para outras origens nem rotas de configuração, consulta arbitrária ou escrita no veículo.
+  Em `/api/wifi`, método diferente de GET, POST ou DELETE recebe HTTP 405 com `Allow: GET, POST, DELETE`.
+- Não há autenticação de aplicação para leitura; `POST` e `DELETE` de `/api/wifi` exigem a senha do
+  OTA. Todo acesso exige conexão à rede local protegida pela senha do SoftAP ou do hotspot.
+- Não há CORS para outras origens, consulta arbitrária ou escrita no veículo; a única escrita de
+  configuração é `/api/wifi`.
 
 ### Envelope JSON
 
@@ -158,6 +177,9 @@ em `valid`, em vez de reconstruir a política a partir de timestamps.
 | 10  | O cliente usa rota desconhecida ou método não permitido    | Responder 404 ou 405, respectivamente, sem enviar comandos OBD.                             |
 | 11  | O adaptador está ausente ou em inicialização demorada      | Continuar respondendo com estado offline sem aguardar conexão ou consulta ao carro.         |
 | 12  | O buffer de log está cheio ou o cliente pede `/api/logs`   | Sobrescrever a entrada mais antiga, contar em `dropped` e responder sem esperar a task OBD. |
+| 13  | `POST` ou `DELETE` de `/api/wifi` com senha do OTA errada  | Responder 403 `forbidden`, sem gravar na NVS e sem reiniciar a placa.                       |
+| 14  | O hotspot cadastrado não está presente no boot             | Subir o SoftAP `Onix-MVP` após 15 s e buscar o hotspot de novo a cada 20 s, sem clientes.   |
+| 15  | Os IPs `.50`–`.59` estão todos ocupados na rede do celular | Manter o IP obtido por DHCP e servir a API nele, sem interromper a conexão.                 |
 
 ## Questões em aberto
 

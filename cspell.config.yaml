@@ -28,6 +28,8 @@ words:
   - frontmatter
   - gugacarbo
   - headless
+  - hotspot
+  - hotspots
   - knip
   - littlefs
   - OBDII
@@ -38,6 +40,9 @@ words:
   - prettier
   - pytest
   - serialização
+  - softap
+  - ssid
+  - wifi
   - singlefile
   - supabase
   - WROOM

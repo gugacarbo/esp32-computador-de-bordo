@@ -12,5 +12,5 @@
 	},
 	"ignore": [],
 	"ignoreDependencies": [],
-	"ignoreBinaries": ["pio"]
+	"ignoreBinaries": ["pio", "nmcli"]
 }

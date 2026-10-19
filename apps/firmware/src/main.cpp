@@ -1,7 +1,7 @@
 // main.cpp — integração do firmware ONIX no ESP32 (SPEC-0002, ADR-0004, ADR-0005, ADR-0009,
-// ADR-0011).
+// ADR-0011, ADR-0012).
 //
-// PONTO ÚNICO de contato com Arduino/ESP32: SoftAP, WebServer, ArduinoOTA, NVS, o sink Serial do
+// PONTO ÚNICO de contato com Arduino/ESP32: SoftAP/STA, WebServer, ArduinoOTA, NVS, o sink Serial do
 // log e a task FreeRTOS do OBD.
 // A política HTTP (rotas, 404/405, cabeçalhos, serialização) vive em ApiRouter (api.cpp);
 // aqui apenas traduzimos HttpRequest/HttpResponse em chamadas do WebServer.
@@ -20,8 +20,12 @@
 #include <WiFi.h>
 
 #include <cstring>
+#include <optional>
 
 #include "esp_system.h"
+#include "lwip/etharp.h"
+#include "lwip/netif.h"
+#include "lwip/tcpip.h"
 
 #include "api.h"
 #include "config.h"
@@ -30,6 +34,8 @@
 #include "obd.h"
 #include "snapshot.h"
 #include "static_asset_policy.h"
+#include "wifi_config.h"
+#include "wifi_policy.h"
 #include "ws_broadcast.h"
 
 namespace {
@@ -44,8 +50,79 @@ using onix::SnapshotStore;
 // (ADR-0004). A ordem de declaração garante a inicialização antes de g_apiRouter.
 SnapshotStore g_snapshotStore;
 const onix::TimingConfig g_timing = onix::defaultTimingConfig();
+
+// Rede (ADR-0012): WifiPolicy decide, applyWifiAction() executa com a API WiFi do Arduino.
+onix::WifiPolicy g_wifiPolicy(onix::defaultWifiTimings());
+onix::WifiCredentials g_wifiCredentials;
+bool g_hasWifiCredentials = false;
+bool g_wifiScanRunning = false;
+bool g_restartPending = false;
+uint32_t g_restartRequestedMs = 0;
+
+constexpr char kWifiPrefsNamespace[] = "wifi";
+
+void scheduleRestart() {
+  g_restartPending = true;
+  g_restartRequestedMs = millis();
+}
+
+// Credenciais do hotspot na NVS para /api/wifi. Gravar ou apagar agenda o reinício, que só
+// acontece depois de a resposta HTTP sair (maybeRestart no loop()).
+class NvsWifiConfig : public onix::WifiConfigPort {
+ public:
+  onix::WifiStatus status() const override {
+    onix::WifiStatus result;
+    const onix::WifiMode mode = g_wifiPolicy.mode();
+    result.mode = onix::wifiModeName(mode);
+    result.configured = g_hasWifiCredentials;
+    result.ssid = g_wifiCredentials.ssid;
+    if (mode == onix::WifiMode::AccessPoint) {
+      result.ip = WiFi.softAPIP().toString().c_str();
+    } else if (WiFi.status() == WL_CONNECTED) {
+      result.ip = WiFi.localIP().toString().c_str();
+    }
+    return result;
+  }
+
+  bool save(const onix::WifiCredentials& credentials) override {
+    Preferences prefs;
+    if (!prefs.begin(kWifiPrefsNamespace, false)) {
+      return false;
+    }
+    const bool ssidOk =
+        prefs.putString("ssid", credentials.ssid.c_str()) == credentials.ssid.size();
+    // putString devolve 0 também para string vazia: rede aberta remove a chave.
+    const bool passOk = credentials.password.empty()
+                            ? (!prefs.isKey("pass") || prefs.remove("pass"))
+                            : prefs.putString("pass", credentials.password.c_str()) ==
+                                  credentials.password.size();
+    prefs.end();
+    if (!ssidOk || !passOk) {
+      return false;
+    }
+    ONIX_LOGW("wifi", "hotspot '%s' cadastrado; reiniciando", credentials.ssid.c_str());
+    scheduleRestart();
+    return true;
+  }
+
+  bool clear() override {
+    Preferences prefs;
+    if (!prefs.begin(kWifiPrefsNamespace, false)) {
+      return false;
+    }
+    const bool ok = prefs.clear();
+    prefs.end();
+    if (ok) {
+      ONIX_LOGW("wifi", "hotspot esquecido; reiniciando");
+      scheduleRestart();
+    }
+    return ok;
+  }
+};
+
+NvsWifiConfig g_wifiConfig;
 ApiRouter g_apiRouter(g_snapshotStore, g_timing, onix::DASHBOARD_HTML, nullptr, nullptr,
-                      &onix::globalLogBuffer());
+                      &onix::globalLogBuffer(), &g_wifiConfig);
 WebServer g_server(onix::ONIX_HTTP_PORT);
 WebSocketsServer g_webSocket(onix::ONIX_WS_PORT);
 uint32_t g_lastWsBroadcastMs = 0;
@@ -126,6 +203,9 @@ void handleWithApiRouter() {
   HttpRequest request;
   request.method = mapHttpMethod(g_server.method());
   request.path = g_server.uri().c_str();
+  if (request.method == HttpMethod::Post || request.method == HttpMethod::Delete) {
+    request.body = g_server.arg("plain").c_str();  // corpo cru do WebServer
+  }
 
   // GET / prefere o bundle externo (/index.html via web:stage); sem o arquivo, cai no
   // dashboard.h embarcado via ApiRouter (fallback offline, nunca removido).
@@ -268,15 +348,24 @@ void maybeLogMetrics() {
             static_cast<unsigned long>(now / 1000));
 }
 
-}  // namespace
+void loadWifiCredentials() {
+  Preferences prefs;
+  // Somente leitura falha quando o namespace ainda não existe: sem credencial.
+  if (!prefs.begin(kWifiPrefsNamespace, true)) {
+    return;
+  }
+  g_wifiCredentials.ssid = prefs.getString("ssid", "").c_str();
+  g_wifiCredentials.password = prefs.getString("pass", "").c_str();
+  prefs.end();
+  g_hasWifiCredentials = onix::isValidWifiCredentials(g_wifiCredentials);
+}
 
-void setup() {
-  Serial.begin(onix::ONIX_SERIAL_BAUD);
-  delay(200);  // aguarda a serial subir antes dos primeiros logs
-  onix::setLogSink(serialLogSink);
-  logBootInfo();
-
-  WiFi.mode(WIFI_AP);
+// SoftAP de config.h. Com hotspot cadastrado, a interface STA fica ligada (sem conectar) para o
+// scan periódico; sem cadastro, só o AP.
+void startSoftAp() {
+  WiFi.setAutoReconnect(false);
+  WiFi.disconnect();
+  WiFi.mode(g_hasWifiCredentials ? WIFI_AP_STA : WIFI_AP);
   const IPAddress apIp(onix::ONIX_AP_IP_OCTETS[0], onix::ONIX_AP_IP_OCTETS[1],
                        onix::ONIX_AP_IP_OCTETS[2], onix::ONIX_AP_IP_OCTETS[3]);
   const IPAddress apNetmask(onix::ONIX_AP_NETMASK_OCTETS[0], onix::ONIX_AP_NETMASK_OCTETS[1],
@@ -288,9 +377,198 @@ void setup() {
                    onix::ONIX_AP_HIDDEN ? 1 : 0, onix::ONIX_AP_MAX_CLIENTS)) {
     ONIX_LOGE("wifi", "falha ao iniciar o SoftAP");
   }
-  const IPAddress effectiveIp = WiFi.softAPIP();
   ONIX_LOGI("wifi", "SoftAP '%s' canal %u | IP efetivo: %s", onix::ONIX_AP_SSID,
-            static_cast<unsigned>(onix::ONIX_AP_CHANNEL), effectiveIp.toString().c_str());
+            static_cast<unsigned>(onix::ONIX_AP_CHANNEL), WiFi.softAPIP().toString().c_str());
+}
+
+// Cliente do hotspot por DHCP; o IP fixo é escolhido em StationUp.
+void startStation() {
+  WiFi.softAPdisconnect(true);
+  WiFi.setHostname(onix::ONIX_STA_HOSTNAME);
+  WiFi.mode(WIFI_STA);
+  WiFi.config(INADDR_NONE, INADDR_NONE, INADDR_NONE);  // DHCP
+  WiFi.setAutoReconnect(true);
+  WiFi.begin(g_wifiCredentials.ssid.c_str(), g_wifiCredentials.password.c_str());
+  ONIX_LOGI("wifi", "conectando ao hotspot '%s'", g_wifiCredentials.ssid.c_str());
+}
+
+// Sonda ARP de um candidato a IP fixo. As funções etharp_* só podem rodar na thread do lwIP:
+// cada passo vai por tcpip_callback e o loop() espera o semáforo.
+struct ArpProbe {
+  ip4_addr_t address;
+  bool hasNetif = false;
+  bool found = false;
+  SemaphoreHandle_t done = nullptr;
+};
+
+struct netif* findStationNetif() {
+  for (struct netif* item = netif_list; item != nullptr; item = item->next) {
+    if (item->name[0] == 's' && item->name[1] == 't') {  // "st" = WIFI_STA_DEF no ESP-IDF
+      return item;
+    }
+  }
+  return nullptr;
+}
+
+void arpRequestOnTcpip(void* context) {
+  auto* probe = static_cast<ArpProbe*>(context);
+  struct netif* stationNetif = findStationNetif();
+  probe->hasNetif = stationNetif != nullptr;
+  if (probe->hasNetif) {
+    etharp_request(stationNetif, &probe->address);
+  }
+  xSemaphoreGive(probe->done);
+}
+
+void arpLookupOnTcpip(void* context) {
+  auto* probe = static_cast<ArpProbe*>(context);
+  struct netif* stationNetif = findStationNetif();
+  struct eth_addr* mac = nullptr;
+  const ip4_addr_t* cached = nullptr;
+  probe->found = stationNetif != nullptr &&
+                 etharp_find_addr(stationNetif, &probe->address, &mac, &cached) >= 0;
+  xSemaphoreGive(probe->done);
+}
+
+// Sem netif ou sem semáforo o candidato conta como ocupado: na dúvida, fica no DHCP.
+bool hostInUseByArp(const onix::Ipv4& address, void* /*context*/) {
+  ArpProbe probe;
+  IP4_ADDR(&probe.address, address[0], address[1], address[2], address[3]);
+  probe.done = xSemaphoreCreateBinary();
+  if (probe.done == nullptr) {
+    return true;
+  }
+  bool inUse = true;
+  if (tcpip_callback(arpRequestOnTcpip, &probe) == ERR_OK) {
+    xSemaphoreTake(probe.done, portMAX_DELAY);
+    if (probe.hasNetif) {
+      delay(onix::ONIX_STA_ARP_PROBE_MS);
+      if (tcpip_callback(arpLookupOnTcpip, &probe) == ERR_OK) {
+        xSemaphoreTake(probe.done, portMAX_DELAY);
+        inUse = probe.found;
+      }
+    }
+  }
+  vSemaphoreDelete(probe.done);
+  return inUse;
+}
+
+onix::Ipv4 toIpv4(const IPAddress& address) {
+  return {address[0], address[1], address[2], address[3]};
+}
+
+// Conectou ao hotspot: troca o IP do DHCP por .50–.59 na faixa do gateway (ADR-0012), para o
+// endereço do painel ser previsível mesmo com a faixa sorteada pelo Android.
+void applyStaticHost() {
+  const IPAddress current = WiFi.localIP();
+  const IPAddress gateway = WiFi.gatewayIP();
+  const IPAddress netmask = WiFi.subnetMask();
+  const std::optional<onix::Ipv4> chosen = onix::selectStaticHost(
+      toIpv4(gateway), toIpv4(netmask), toIpv4(current), onix::ONIX_STA_STATIC_HOST_FIRST,
+      onix::ONIX_STA_STATIC_HOST_COUNT, hostInUseByArp, nullptr);
+  if (!chosen.has_value()) {
+    ONIX_LOGW("wifi", "hotspot conectado; .%u-.%u ocupados ou fora da faixa, IP do DHCP %s",
+              static_cast<unsigned>(onix::ONIX_STA_STATIC_HOST_FIRST),
+              static_cast<unsigned>(onix::ONIX_STA_STATIC_HOST_FIRST +
+                                    onix::ONIX_STA_STATIC_HOST_COUNT - 1),
+              current.toString().c_str());
+    return;
+  }
+  const IPAddress target((*chosen)[0], (*chosen)[1], (*chosen)[2], (*chosen)[3]);
+  if (target == current) {
+    ONIX_LOGI("wifi", "hotspot conectado; IP %s (DHCP já na faixa fixa)",
+              current.toString().c_str());
+    return;
+  }
+  const IPAddress dns = WiFi.dnsIP(0) == IPAddress(0, 0, 0, 0) ? gateway : WiFi.dnsIP(0);
+  if (!WiFi.config(target, gateway, netmask, dns)) {
+    ONIX_LOGW("wifi", "hotspot conectado; falha ao fixar %s, IP do DHCP %s",
+              target.toString().c_str(), current.toString().c_str());
+    return;
+  }
+  ONIX_LOGI("wifi", "hotspot conectado; IP fixo %s (gateway %s)", target.toString().c_str(),
+            gateway.toString().c_str());
+}
+
+void applyWifiAction(onix::WifiAction action) {
+  switch (action) {
+    case onix::WifiAction::None:
+      return;
+    case onix::WifiAction::StartStation:
+      startStation();
+      return;
+    case onix::WifiAction::StationUp:
+      applyStaticHost();
+      return;
+    case onix::WifiAction::StationDown:
+      // A reconexão automática do Arduino reusaria o IP fixo; com DHCP, um hotspot religado em
+      // outra faixa continua funcionando.
+      WiFi.config(INADDR_NONE, INADDR_NONE, INADDR_NONE);
+      ONIX_LOGW("wifi", "hotspot perdido; reconectando por até %lu s",
+                static_cast<unsigned long>(onix::ONIX_STA_RECONNECT_TIMEOUT_MS / 1000));
+      return;
+    case onix::WifiAction::StartAccessPoint:
+      if (g_hasWifiCredentials) {
+        ONIX_LOGW("wifi", "hotspot '%s' indisponível; subindo o SoftAP",
+                  g_wifiCredentials.ssid.c_str());
+      }
+      startSoftAp();
+      return;
+    case onix::WifiAction::StartScan:
+      if (WiFi.scanNetworks(true) == WIFI_SCAN_FAILED) {
+        ONIX_LOGD("wifi", "falha ao iniciar o scan");
+        return;
+      }
+      g_wifiScanRunning = true;
+      return;
+  }
+}
+
+// Chamado a cada loop(): colhe o scan assíncrono e aplica a decisão da WifiPolicy.
+void tickWifi() {
+  const uint64_t now = onix::monotonicUptimeMs();
+  const uint8_t apClients = WiFi.softAPgetStationNum();
+  if (g_wifiScanRunning) {
+    const int16_t count = WiFi.scanComplete();
+    if (count != WIFI_SCAN_RUNNING) {
+      g_wifiScanRunning = false;
+      bool found = false;
+      for (int16_t i = 0; i < count; ++i) {
+        if (WiFi.SSID(i) == g_wifiCredentials.ssid.c_str()) {
+          found = true;
+          break;
+        }
+      }
+      WiFi.scanDelete();
+      if (found) {
+        ONIX_LOGI("wifi", "hotspot '%s' encontrado no scan", g_wifiCredentials.ssid.c_str());
+      }
+      applyWifiAction(g_wifiPolicy.onScanResult(now, found, apClients));
+    }
+  }
+  applyWifiAction(
+      g_wifiPolicy.tick(now, WiFi.status() == WL_CONNECTED, apClients, g_wifiScanRunning));
+}
+
+// POST/DELETE /api/wifi: reinicia depois de a resposta sair.
+void maybeRestart() {
+  if (g_restartPending && millis() - g_restartRequestedMs >= onix::ONIX_WIFI_RESTART_DELAY_MS) {
+    ESP.restart();
+  }
+}
+
+}  // namespace
+
+void setup() {
+  Serial.begin(onix::ONIX_SERIAL_BAUD);
+  delay(200);  // aguarda a serial subir antes dos primeiros logs
+  onix::setLogSink(serialLogSink);
+  logBootInfo();
+
+  // Hotspot cadastrado: tenta a STA por ONIX_STA_CONNECT_TIMEOUT_MS; senão (ou sem cadastro),
+  // SoftAP. As transições seguintes ficam em tickWifi() (ADR-0012).
+  loadWifiCredentials();
+  applyWifiAction(g_wifiPolicy.begin(g_hasWifiCredentials, onix::monotonicUptimeMs()));
 
   // LittleFS (frontend externo via web:stage -> data/): sem /index.html, GET / usa o
   // dashboard.h embarcado (fallback em handleWithApiRouter). Falha na montagem é logada;
@@ -307,6 +585,7 @@ void setup() {
   g_server.on(onix::API_ROUTE_ROOT, handleWithApiRouter);
   g_server.on(onix::API_ROUTE_DATA, handleWithApiRouter);
   g_server.on(onix::API_ROUTE_LOGS, handleWithApiRouter);
+  g_server.on(onix::API_ROUTE_WIFI, handleWithApiRouter);
   g_server.onNotFound(handleWithApiRouter);
   g_server.begin();
   ONIX_LOGI("http", "porta %u", static_cast<unsigned>(onix::ONIX_HTTP_PORT));
@@ -338,6 +617,8 @@ void loop() {
   maybeBroadcastWs();       // throttle por millis(), só com clientes; sem delay
   ArduinoOTA.handle();      // só bloqueia durante uma gravação OTA em andamento
   maybeLogMetrics();        // throttle por millis(); sem delay
+  tickWifi();               // STA/AP/scan (ADR-0012); só a sonda ARP ao conectar espera
+  maybeRestart();           // após POST/DELETE /api/wifi
 }
 
 #else

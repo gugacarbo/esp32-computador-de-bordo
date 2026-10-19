@@ -138,6 +138,19 @@
     "implemented-by": []
   },
   {
+    "id": "ADR-0012",
+    "path": "docs/adr/0012-conecta-ao-hotspot-do-celular-com-fallback-para-o-softap.md",
+    "layer": "adr",
+    "title": "Conecta ao hotspot do celular com fallback para o SoftAP",
+    "status": "accepted",
+    "builds-on": [
+      "ADR-0009",
+      "ADR-0011"
+    ],
+    "superseded-by": null,
+    "implemented-by": []
+  },
+  {
     "id": "SPEC-0001",
     "path": "docs/specs/0001-coleta-sensores-obd-e-recupera-a-conexao.md",
     "layer": "specs",
@@ -161,6 +174,7 @@
       "ADR-0004",
       "ADR-0005",
       "ADR-0011",
+      "ADR-0012",
       "SPEC-0001"
     ],
     "superseded-by": null,

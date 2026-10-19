@@ -64,6 +64,17 @@ constexpr uint16_t ONIX_WS_PORT = 81;
 constexpr uint32_t ONIX_WS_BROADCAST_MS = 500;
 constexpr uint32_t ONIX_SERIAL_BAUD = 115200;
 
+// Cliente Wi-Fi no hotspot do celular (ADR-0012): credenciais na NVS via POST /api/wifi; sem
+// conexão, o SoftAP acima sobe e a placa procura o hotspot periodicamente (só sem clientes no AP).
+constexpr uint32_t ONIX_STA_CONNECT_TIMEOUT_MS = 15000;    // boot/scan: tenta a STA antes do AP
+constexpr uint32_t ONIX_STA_RECONNECT_TIMEOUT_MS = 30000;  // STA caiu: espera antes de subir o AP
+constexpr uint32_t ONIX_STA_SCAN_INTERVAL_MS = 20000;      // em AP sem clientes: busca o SSID
+constexpr uint8_t ONIX_STA_STATIC_HOST_FIRST = 50;         // IP fixo .50–.59 na faixa do gateway
+constexpr uint8_t ONIX_STA_STATIC_HOST_COUNT = 10;
+constexpr uint32_t ONIX_STA_ARP_PROBE_MS = 300;            // espera da resposta ARP por candidato
+constexpr uint32_t ONIX_WIFI_RESTART_DELAY_MS = 800;       // após POST/DELETE /api/wifi
+constexpr char ONIX_STA_HOSTNAME[] = "onix";
+
 // Atualização por Wi-Fi (ADR-0009): ArduinoOTA na rede do SoftAP. A senha precisa bater com
 // `--auth` do env `ota` em platformio.ini; quem está no AP sem ela não grava firmware.
 constexpr char ONIX_OTA_HOSTNAME[] = "onix";

@@ -2,6 +2,7 @@ import type { ReactElement } from "react";
 import { DiagnosticsPanel } from "./components/DiagnosticsPanel";
 import { SensorCard } from "./components/SensorCard";
 import { Badge } from "./components/ui/badge";
+import { WifiPanel } from "./components/WifiPanel";
 import { useTelemetry } from "./hooks/useTelemetry";
 import {
 	PANEL_TEXT,
@@ -86,6 +87,7 @@ export default function App(): ReactElement {
 					</span>
 				</footer>
 
+				<WifiPanel />
 				<DiagnosticsPanel />
 			</div>
 		</div>

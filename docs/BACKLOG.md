@@ -17,6 +17,7 @@ formato da tabela é apontada pelo comando, nunca lida em silêncio.
 | 0009 | Habilita atualização OTA por Wi-Fi com ArduinoOTA             | 2026-10-19 | em uso   |
 | 0010 | Serve assets do painel somente em gzip                        | 2026-10-19 | em uso   |
 | 0011 | Registra logs do firmware em buffer circular exposto por HTTP | 2026-10-19 | em uso   |
+| 0012 | Conecta ao hotspot do celular com fallback para o SoftAP      | 2026-10-19 | em uso   |
 
 ## Reservas Spec
 

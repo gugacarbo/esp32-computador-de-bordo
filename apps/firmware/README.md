@@ -33,7 +33,7 @@ Esses comandos não substituem os checks Bun da raiz. O job `firmware` do CI exe
 
 ## Configuração do scanner
 
-A identidade do ELM327 fica em `include/config.h`: `ONIX_BT_DEVICE_NAME` (padrão `OBDII`), `ONIX_BT_DEVICE_PIN` (padrão `1234`; muitos clones usam `0000`) e `ONIX_BT_DEVICE_MAC` (vazio conecta pelo nome). O transporte é Bluetooth Classic (SPP): adaptadores "ELM327" que só expõem BLE não funcionam. `ONIX_OBD_PROTOCOL` usa `'0'` (busca automática, até 30 s); `'6'` (ISO 15765-4 CAN 11 bit 500 kbps) pula a busca no Onix 2019.
+A identidade do ELM327 fica em `include/config.h`: `ONIX_BT_DEVICE_NAME` (padrão `OBDII`), `ONIX_BT_DEVICE_PIN` (padrão `1234`; muitos clones usam `0000`) e `ONIX_BT_DEVICE_MAC` (vazio conecta pelo nome). Pelo nome, o firmware faz uma busca curta (`ONIX_BT_DISCOVERY_MS`, 5,1 s), guarda o MAC encontrado e passa a conectar direto por ele; só busca de novo após `ONIX_BT_MAC_RETRIES` falhas seguidas. A busca ocupa o rádio e derruba o SoftAP enquanto dura (cerca de 1 s de indisponibilidade por tentativa); preencher `ONIX_BT_DEVICE_MAC` elimina a busca. O transporte é Bluetooth Classic (SPP): adaptadores "ELM327" que só expõem BLE não funcionam. `ONIX_OBD_PROTOCOL` usa `'0'` (busca automática, até 30 s); `'6'` (ISO 15765-4 CAN 11 bit 500 kbps) pula a busca no Onix 2019.
 
 O firmware envia apenas Serviço 01 (leitura de PIDs) e `AT RV`; nunca apaga códigos de falha nem escreve na ECU. A task OBD roda no núcleo 1 porque a inicialização do ELMduino faz espera ativa e o watchdog do ESP32 reinicia a placa se o idle do núcleo 0 ficar sem CPU por 5 s.
 
@@ -59,6 +59,27 @@ Depois de uma gravação por USB com firmware que inclui OTA, conecte o computad
 A porta acima é um exemplo: confirme a porta real antes de gravar. Alimente por USB durante o MVP; instalação elétrica automotiva permanente não está incluída.
 
 Conecte o Android à rede `Onix-MVP` e abra `http://192.168.4.1`. A configuração deve seguir a SPEC-0002; o endereço efetivo é informado pelo Serial. Aceite permanecer na rede sem internet quando o Android solicitar.
+
+## Hotspot do celular
+
+Com o hotspot do celular cadastrado, a placa entra nele como cliente para o aparelho manter a
+internet móvel enquanto mostra o painel (ADR-0012). Sem ele, o SoftAP `Onix-MVP` continua
+disponível como antes.
+
+- **Cadastrar:** na seção "Rede Wi-Fi" do painel, conectado ao `Onix-MVP`, informe o SSID, a senha
+  do hotspot e a senha do OTA (`ONIX_OTA_PASSWORD` em `include/config.h`). A placa grava a
+  credencial na NVS e reinicia. Equivalente: `POST /api/wifi` com `{"ssid","password","otaPassword"}`.
+- **Remover:** a mesma seção, ou `DELETE /api/wifi` com `{"otaPassword":"..."}`.
+- **Requisitos do hotspot:** 2,4 GHz e WPA2. O ESP32 não conecta em 5 GHz nem em WPA3. SSID de 1 a
+  32 bytes; senha de 8 a 63 caracteres, ou vazia para rede aberta.
+- **Encontrar o IP:** a placa tenta o endereço fixo `.50` a `.59` na faixa do hotspot, e usa o IP do
+  DHCP se todos estiverem ocupados. O endereço aparece no Serial, em `GET /api/logs` e em
+  `GET /api/wifi`. Na lista de clientes do celular, a placa aparece com o nome `onix`. Não há
+  `onix.local` nem `--ota-host`; o deploy por Wi-Fi continua pelo `Onix-MVP`.
+- **Fallback:** com credencial, o boot tenta o hotspot por 15 s e depois sobe o `Onix-MVP`. Com o
+  `Onix-MVP` ativo e sem clientes, a placa procura o hotspot a cada 20 s. Se o hotspot cai, a placa
+  espera 30 s e sobe o `Onix-MVP`. Com clientes conectados ao `Onix-MVP`, a busca fica suspensa, pois
+  o scan troca de canal e derruba a conexão.
 
 ## Aceite físico pendente
 

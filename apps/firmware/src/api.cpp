@@ -82,7 +82,7 @@ std::string serializeSnapshotJson(const Snapshot& s,const TimingConfig& t,uint64
 }
 bool HttpResponse::hasHeader(const std::string& name)const {for(const auto& h:headers)if(h.name==name)return true;return false;}
 std::string HttpResponse::headerValue(const std::string& name)const {for(const auto& h:headers)if(h.name==name)return h.value;return {};}
-ApiRouter::ApiRouter(const SnapshotStore& s,const TimingConfig& t,const char* html,UptimeProvider u,void* ctx,const LogBuffer* logs):store_(s),timing_(t),dashboardHtml_(html),uptime_(u),uptimeContext_(ctx),logs_(logs){}
+ApiRouter::ApiRouter(const SnapshotStore& s,const TimingConfig& t,const char* html,UptimeProvider u,void* ctx,const LogBuffer* logs,WifiConfigPort* wifi):store_(s),timing_(t),dashboardHtml_(html),uptime_(u),uptimeContext_(ctx),logs_(logs),wifi_(wifi){}
 std::string ApiRouter::buildLogsJson()const {
  const auto now=uptime_ ? uptime_(uptimeContext_) : monotonicUptimeMs();
  // Sem buffer injetado, a rota responde com lista vazia (os testes e builds sem log usam isso).
@@ -94,9 +94,39 @@ std::string ApiRouter::buildDataJson()const {
  const auto now=uptime_ ? uptime_(uptimeContext_) : monotonicUptimeMs();
  return serializeSnapshotJson(copy,timing_,now,now);
 }
+namespace {
+// Respostas JSON de /api/wifi: sempre no-store, inclusive erros {"ok":false,"error":"..."}.
+HttpResponse wifiJson(int status,const std::string& body){return {status,ONIX_CONTENT_TYPE_JSON,{{ONIX_HEADER_CACHE_CONTROL,ONIX_CACHE_CONTROL_NO_STORE}},body};}
+HttpResponse wifiError(int status,const char* error){return wifiJson(status,std::string("{\"ok\":false,\"error\":\"")+error+"\"}");}
+// GET/POST/DELETE /api/wifi (ADR-0012). A senha OTA é checada antes de validar credenciais.
+HttpResponse handleWifi(const HttpRequest& req,WifiConfigPort& wifi){
+ const char restarted[]="{\"ok\":true,\"restarting\":true}";
+ if(req.method==HttpMethod::Get)return wifiJson(200,serializeWifiStatusJson(wifi.status()));
+ if(req.method==HttpMethod::Post){
+  const auto body=parseWifiRequestBody(req.body);
+  if(!body)return wifiError(400,"invalid-json");
+  if(body->otaPassword!=ONIX_OTA_PASSWORD)return wifiError(403,"forbidden");
+  const WifiCredentials credentials{body->ssid,body->password};
+  if(!isValidWifiCredentials(credentials))return wifiError(400,"invalid-credentials");
+  if(!wifi.save(credentials))return wifiError(500,"storage");
+  return wifiJson(200,restarted);
+ }
+ if(req.method==HttpMethod::Delete){
+  const auto body=parseWifiRequestBody(req.body);
+  if(!body)return wifiError(400,"invalid-json");
+  if(body->otaPassword!=ONIX_OTA_PASSWORD)return wifiError(403,"forbidden");
+  if(!wifi.clear())return wifiError(500,"storage");
+  return wifiJson(200,restarted);
+ }
+ return {405,ONIX_CONTENT_TYPE_TEXT,{{"Allow","GET, POST, DELETE"}},"Method not allowed"};
+}
+}
 HttpResponse ApiRouter::handle(const HttpRequest& req)const {
  HttpResponse response;
- if(req.path!="/" && req.path!="/api/data" && req.path!="/api/logs")return {404,ONIX_CONTENT_TYPE_TEXT,{},"Not found"};
+ // /api/wifi só existe quando há WifiConfigPort injetado; sem ele é rota desconhecida (404).
+ const bool wifiRoute=wifi_ && req.path==API_ROUTE_WIFI;
+ if(req.path!="/" && req.path!="/api/data" && req.path!="/api/logs" && !wifiRoute)return {404,ONIX_CONTENT_TYPE_TEXT,{},"Not found"};
+ if(wifiRoute)return handleWifi(req,*wifi_);
  if(req.method!=HttpMethod::Get)return {405,ONIX_CONTENT_TYPE_TEXT,{{"Allow","GET"}},"Method not allowed"};
  if(req.path=="/")return {200,ONIX_CONTENT_TYPE_HTML,{},dashboardHtml_ ? dashboardHtml_ : ""};
  if(req.path=="/api/logs")return {200,ONIX_CONTENT_TYPE_JSON,{{ONIX_HEADER_CACHE_CONTROL,ONIX_CACHE_CONTROL_NO_STORE}},buildLogsJson()};

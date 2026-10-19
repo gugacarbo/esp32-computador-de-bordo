@@ -6,8 +6,32 @@
 #include <string>
 #include <thread>
 #include <atomic>
+#include <optional>
 using namespace onix;
 static uint64_t clockNow(void* ctx) { return *static_cast<uint64_t*>(ctx); }
+
+// Fake de WifiConfigPort: grava o que foi salvo e permite forçar falhas de NVS.
+class FakeWifiPort : public WifiConfigPort {
+ public:
+  WifiStatus status() const override { return statusValue; }
+  bool save(const WifiCredentials& credentials) override {
+    ++saveCount;
+    saved = credentials;
+    return saveResult;
+  }
+  bool clear() override {
+    ++clearCount;
+    return clearResult;
+  }
+
+  WifiStatus statusValue;
+  WifiCredentials saved;
+  int saveCount = 0;
+  int clearCount = 0;
+  bool saveResult = true;
+  bool clearResult = true;
+};
+
 int main() {
   assert(onix::selectAssetPath("/assets/app-Ab12cd.js", true) == "/assets/app-Ab12cd.js.gz");
   assert(onix::selectAssetPath("/index.html", false) == "/index.html");
@@ -104,5 +128,133 @@ int main() {
     for (auto& r : copy.sensors) assert(r.updatedAtMs == first);
   }
   producer.join();
+  // /api/wifi sem WifiConfigPort injetado é rota desconhecida (ADR-0012).
+  assert(api.handle({HttpMethod::Get, "/api/wifi"}).status == 404);
+
+  // /api/wifi com fake: GET, POST e DELETE (SPEC do contrato em api.h).
+  FakeWifiPort wifi;
+  wifi.statusValue = {"station", true, "Casa \"X\"", "192.168.43.50"};
+  ApiRouter apiWifi(store, timing, "<html>ONIX</html>", clockNow, &now, nullptr, &wifi);
+  const std::string restarted = R"JSON({"ok":true,"restarting":true})JSON";
+  const std::string storageError = R"JSON({"ok":false,"error":"storage"})JSON";
+  auto wifiPost = [&](const std::string& body) {
+    return apiWifi.handle({HttpMethod::Post, "/api/wifi", body});
+  };
+  auto wifiDelete = [&](const std::string& body) {
+    return apiWifi.handle({HttpMethod::Delete, "/api/wifi", body});
+  };
+
+  auto status = apiWifi.handle({HttpMethod::Get, "/api/wifi"});
+  assert(status.status == 200);
+  assert(status.contentType == "application/json");
+  assert(status.headerValue("Cache-Control") == "no-store");
+  assert(status.body ==
+         "{\"mode\":\"station\",\"configured\":true,\"ssid\":\"Casa \\\"X\\\"\",\"ip\":\"192.168.43.50\"}");
+
+  // POST com sucesso grava exatamente ssid/senha e responde 200 (saveCount: 1).
+  auto saved = wifiPost(R"JSON({"ssid":"Casa","password":"senha1234","otaPassword":"onix-ota"})JSON");
+  assert(saved.status == 200);
+  assert(saved.contentType == "application/json");
+  assert(saved.headerValue("Cache-Control") == "no-store");
+  assert(saved.body == restarted);
+  assert(wifi.saveCount == 1 && wifi.saved.ssid == "Casa" && wifi.saved.password == "senha1234");
+
+  // Senha OTA errada: 403 e nada gravado; a checagem vem antes de validar credenciais.
+  auto forbidden = wifiPost(R"JSON({"ssid":"Outra","password":"senha1234","otaPassword":"errada"})JSON");
+  assert(forbidden.status == 403);
+  assert(forbidden.body == R"JSON({"ok":false,"error":"forbidden"})JSON");
+  assert(forbidden.headerValue("Cache-Control") == "no-store");
+  assert(wifiPost(R"JSON({"ssid":"","otaPassword":"errada"})JSON").status == 403);
+  assert(wifi.saveCount == 1);
+
+  // JSON inválido: 400 (corpo vazio e objeto truncado).
+  auto badJson = wifiPost(R"JSON({"ssid":"Casa",)JSON");
+  assert(badJson.status == 400);
+  assert(badJson.body == R"JSON({"ok":false,"error":"invalid-json"})JSON");
+  assert(wifiPost("").status == 400);
+  assert(wifi.saveCount == 1);
+
+  // SSID vazio e senha de 7 bytes: 400 invalid-credentials, nada gravado.
+  auto emptySsid = wifiPost(R"JSON({"ssid":"","password":"senha1234","otaPassword":"onix-ota"})JSON");
+  assert(emptySsid.status == 400);
+  assert(emptySsid.body == R"JSON({"ok":false,"error":"invalid-credentials"})JSON");
+  assert(wifiPost(R"JSON({"ssid":"Casa","password":"1234567","otaPassword":"onix-ota"})JSON").status == 400);
+  assert(wifi.saveCount == 1);
+
+  // Senha vazia (rede aberta) é válida (saveCount: 2).
+  auto open = wifiPost(R"JSON({"ssid":"Aberta","password":"","otaPassword":"onix-ota"})JSON");
+  assert(open.status == 200);
+  assert(wifi.saveCount == 2 && wifi.saved.ssid == "Aberta" && wifi.saved.password.empty());
+
+  // Falha na NVS: 500 storage (saveCount: 3).
+  wifi.saveResult = false;
+  auto storageFail = wifiPost(R"JSON({"ssid":"Casa","password":"senha1234","otaPassword":"onix-ota"})JSON");
+  assert(storageFail.status == 500);
+  assert(storageFail.body == storageError);
+  assert(storageFail.headerValue("Cache-Control") == "no-store");
+  assert(wifi.saveCount == 3);
+  wifi.saveResult = true;
+
+  // DELETE: sucesso chama clear(); senha errada não limpa; JSON inválido 400; falha 500.
+  auto cleared = wifiDelete(R"JSON({"otaPassword":"onix-ota"})JSON");
+  assert(cleared.status == 200);
+  assert(cleared.body == restarted);
+  assert(cleared.headerValue("Cache-Control") == "no-store");
+  assert(wifi.clearCount == 1);
+  auto clearForbidden = wifiDelete(R"JSON({"otaPassword":"errada"})JSON");
+  assert(clearForbidden.status == 403);
+  assert(clearForbidden.body == R"JSON({"ok":false,"error":"forbidden"})JSON");
+  assert(wifi.clearCount == 1);
+  auto clearBad = wifiDelete("nao-json");
+  assert(clearBad.status == 400);
+  assert(clearBad.body == R"JSON({"ok":false,"error":"invalid-json"})JSON");
+  wifi.clearResult = false;
+  auto clearFail = wifiDelete(R"JSON({"otaPassword":"onix-ota"})JSON");
+  assert(clearFail.status == 500);
+  assert(clearFail.body == storageError);
+  assert(clearFail.headerValue("Cache-Control") == "no-store");
+  assert(wifi.clearCount == 2);
+  wifi.clearResult = true;
+
+  // Outros métodos em /api/wifi: 405 com Allow completo.
+  auto put = apiWifi.handle({HttpMethod::Put, "/api/wifi", R"JSON({})JSON"});
+  assert(put.status == 405);
+  assert(put.headerValue("Allow") == "GET, POST, DELETE");
+  assert(apiWifi.handle({HttpMethod::Head, "/api/wifi"}).status == 405);
+  assert(wifi.saveCount == 3 && wifi.clearCount == 2);
+
+  // Regras de credenciais: limites de 32 bytes no SSID e 8..63 na senha.
+  assert(isValidWifiCredentials({std::string(32, 's'), ""}));
+  assert(!isValidWifiCredentials({std::string(33, 's'), ""}));
+  assert(isValidWifiCredentials({"Casa", std::string(8, 'p')}));
+  assert(isValidWifiCredentials({"Casa", std::string(63, 'p')}));
+  assert(!isValidWifiCredentials({"Casa", std::string(64, 'p')}));
+
+  // Serialização do status: controle < 0x20 vira \u00XX.
+  WifiStatus odd{"connecting", false, std::string("a\x01" "b"), ""};
+  assert(serializeWifiStatusJson(odd) ==
+         "{\"mode\":\"connecting\",\"configured\":false,\"ssid\":\"a\\u0001b\",\"ip\":\"\"}");
+
+  // parseWifiRequestBody: escapes JSON e \uXXXX viram UTF-8.
+  auto escaped = parseWifiRequestBody(R"JSON({"ssid":"a\"b\\c\/d\né","password":"éé"})JSON");
+  assert(escaped.has_value());
+  assert(escaped->ssid == std::string("a\"b\\c/d\n\xC3\xA9"));
+  assert(escaped->password == std::string("\xC3\xA9\xC3\xA9"));
+
+  // Chaves desconhecidas são ignoradas, duplicadas valem a última, espaços são aceitos.
+  auto lenient = parseWifiRequestBody(R"JSON( { "foo" : "bar", "ssid":"X", "otaPassword":"y", "ssid":"Z" } )JSON");
+  assert(lenient.has_value());
+  assert(lenient->ssid == "Z" && lenient->otaPassword == "y" && lenient->password.empty());
+  assert(parseWifiRequestBody("  {\n \"ssid\" : \"X\" }\r\n").has_value());
+  assert(parseWifiRequestBody("{}").has_value());
+
+  // Entradas recusadas: lixo depois do objeto, valores não-string, corpo vazio, sem chaves.
+  assert(!parseWifiRequestBody(R"JSON({"ssid":"X"} x)JSON").has_value());
+  assert(!parseWifiRequestBody(R"JSON({"ssid":12})JSON").has_value());
+  assert(!parseWifiRequestBody(R"JSON({"ssid":true})JSON").has_value());
+  assert(!parseWifiRequestBody("").has_value());
+  assert(!parseWifiRequestBody("   ").has_value());
+  assert(!parseWifiRequestBody(R"JSON({"ssid":"X",})JSON").has_value());
+
   std::cout << "API and snapshot behavioral tests passed\n";
 }

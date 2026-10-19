@@ -11,6 +11,7 @@
 #include "config.h"
 #include "log.h"
 #include "snapshot.h"
+#include "wifi_config.h"
 
 namespace onix {
 
@@ -19,6 +20,7 @@ enum class HttpMethod { Get, Head, Post, Put, Patch, Delete, Options, Other };
 struct HttpRequest {
   HttpMethod method = HttpMethod::Get;
   std::string path;
+  std::string body;  // corpo cru (POST/DELETE /api/wifi); vazio nos demais
 };
 
 struct HttpHeader {
@@ -41,6 +43,7 @@ struct HttpResponse {
 constexpr char API_ROUTE_ROOT[] = "/";
 constexpr char API_ROUTE_DATA[] = "/api/data";
 constexpr char API_ROUTE_LOGS[] = "/api/logs";
+constexpr char API_ROUTE_WIFI[] = "/api/wifi";
 
 // Base monotônica em milissegundos desde o boot (esp_timer no ESP32, steady_clock no host).
 // É a mesma base de `uptimeMs`, `updatedAtMs`, `ageMs` e das janelas de saúde/frescor.
@@ -89,11 +92,20 @@ class ApiRouter {
  public:
   ApiRouter(const SnapshotStore& store, const TimingConfig& timing, const char* dashboardHtml,
             UptimeProvider uptime = nullptr, void* uptimeContext = nullptr,
-            const LogBuffer* logs = nullptr);
+            const LogBuffer* logs = nullptr, WifiConfigPort* wifi = nullptr);
 
   // GET /           -> 200 text/html; charset=utf-8 + HTML do painel (dashboard.h)
   // GET /api/data   -> 200 application/json + Cache-Control: no-store
   // GET /api/logs   -> 200 application/json + Cache-Control: no-store (buffer de log; vazio se não houver buffer)
+  // /api/wifi (ADR-0012; sem WifiConfigPort injetado a rota é desconhecida -> 404):
+  //   GET    -> 200 JSON serializeWifiStatusJson + no-store
+  //   POST   -> corpo inválido 400; otaPassword != ONIX_OTA_PASSWORD 403; credencial inválida
+  //             400; save() falhou 500; sucesso 200 {"ok":true,"restarting":true}
+  //   DELETE -> corpo inválido 400; otaPassword errada 403; clear() falhou 500; sucesso 200
+  //             {"ok":true,"restarting":true}
+  //   outro  -> 405 com Allow: GET, POST, DELETE
+  //   Todas as respostas JSON de /api/wifi (inclusive erros {"ok":false,"error":"..."}) levam
+  //   Cache-Control: no-store.
   // método != GET em rota conhecida -> 405, sem ler o snapshot
   // rota desconhecida -> 404, sem ler o snapshot
   HttpResponse handle(const HttpRequest& request) const;
@@ -116,6 +128,7 @@ class ApiRouter {
   UptimeProvider uptime_;
   void* uptimeContext_;
   const LogBuffer* logs_;
+  WifiConfigPort* wifi_;
 };
 
 }  // namespace onix
