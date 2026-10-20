@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import {
 	describeBtError,
+	deviceClassLabel,
 	isScanRunning,
 	normalizeMac,
 	parseBtConfigStatus,
@@ -15,8 +16,8 @@ const STATUS = {
 	scan: {
 		state: "done",
 		devices: [
-			{ name: "OBDII", mac: "11:22:33:44:55:66", rssi: -60 },
-			{ name: "", mac: "77:88:99:AA:BB:CC", rssi: null },
+			{ name: "OBDII", mac: "11:22:33:44:55:66", rssi: -60, cod: 7936 },
+			{ name: "", mac: "77:88:99:AA:BB:CC", rssi: null, cod: null },
 		],
 	},
 };
@@ -83,4 +84,31 @@ test("describeBtError traduz os códigos do firmware", () => {
 		"andamento",
 	);
 	expect(describeBtError(500, null)).toBe("Falha na requisição (HTTP 500).");
+});
+
+test("cod ausente vira null e cod inválido recusa a resposta", () => {
+	const legacy = parseBtConfigStatus({
+		...STATUS,
+		scan: {
+			state: "done",
+			devices: [{ name: "X", mac: "11:22:33:44:55:66", rssi: -50 }],
+		},
+	});
+	expect(legacy?.scan.devices[0]?.cod).toBeNull();
+	expect(
+		parseBtConfigStatus({
+			...STATUS,
+			scan: {
+				state: "done",
+				devices: [{ name: "X", mac: "", rssi: null, cod: "1" }],
+			},
+		}),
+	).toBeNull();
+});
+
+test("deviceClassLabel usa a classe principal", () => {
+	expect(deviceClassLabel(0x5a020c)).toBe("Celular");
+	expect(deviceClassLabel(0x1f00)).toBe("Sem categoria");
+	expect(deviceClassLabel(0x0540)).toBe("Periférico");
+	expect(deviceClassLabel(null)).toBe("Tipo desconhecido");
 });

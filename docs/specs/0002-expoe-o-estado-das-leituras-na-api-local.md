@@ -57,15 +57,15 @@ pendente, não uma implementação no app Bun.
   `Cache-Control: no-store`; sem o manipulador injetado, HTTP 503 `{"ok":false}`. Outro método recebe
   HTTP 405 com `Allow: POST`. Não exige senha: só dispara uma nova tentativa de conexão.
 - `GET /api/obd/config` (ADR-0014): HTTP 200 com
-  `{"custom":false,"name":"OBDII","pin":"1234","mac":"","scan":{"state":"done","devices":[{"name":"OBDII","mac":"AA:BB:CC:DD:EE:FF","rssi":-60}]}}`.
+  `{"custom":false,"name":"OBDII","pin":"1234","mac":"","scan":{"state":"done","devices":[{"name":"OBDII","mac":"AA:BB:CC:DD:EE:FF","rssi":-60,"cod":7936}]}}`.
   `custom` indica configuração gravada pelo painel; `scan.state` é `idle`, `pending`, `scanning`,
-  `done`, `busy` (scanner conectado) ou `failed`; `rssi` é `null` sem medida.
+  `done`, `busy` (scanner conectado) ou `failed`; `rssi` e `cod` (Class of Device) são `null` quando não anunciados, e a lista sai do sinal mais forte ao mais fraco.
 - `POST /api/obd/config`: corpo `{"name":"...","pin":"...","mac":"..."}`, com nome ou MAC
   obrigatório, nome até 31 bytes, PIN até 16 e MAC `AA:BB:CC:DD:EE:FF` (normalizado). Grava na NVS e
   aplica sem reiniciar: a sessão reconecta e retoma a busca parada. HTTP 200 `{"ok":true}`; erros
   HTTP 400 `invalid-json` ou `invalid-config` e HTTP 500 `storage`.
 - `DELETE /api/obd/config`: volta aos padrões de `config.h`; HTTP 200 `{"ok":true}` ou 500 `storage`.
-- `POST /api/obd/scan`: pede uma busca de ~5 s pela task OBD e responde HTTP 202 `{"ok":true}`; com
+- `POST /api/obd/scan`: pede uma busca de ~10 s (`ONIX_BT_PANEL_SCAN_MS`) pela task OBD e responde HTTP 202 `{"ok":true}`; com
   outra busca pendente, HTTP 409 `{"ok":false,"error":"busy"}`. O resultado sai em
   `GET /api/obd/config`. Respostas JSON de `/api/obd/*` usam `Cache-Control: no-store`; sem a porta
   injetada, `/api/obd/config` e `/api/obd/scan` respondem 404.

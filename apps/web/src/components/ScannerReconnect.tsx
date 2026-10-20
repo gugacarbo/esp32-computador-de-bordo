@@ -1,14 +1,12 @@
 import { type ReactElement, useState } from "react";
 import { requestObdReconnect } from "../lib/obd";
-import { cn } from "../lib/utils";
+import { Alert } from "./ui/alert";
+import { Button } from "./ui/button";
 
 interface ScannerReconnectProps {
 	/** Firmware desistiu de buscar o scanner BT (envelope.btSearchStopped). */
 	searchStopped: boolean;
 }
-
-const BUTTON_CLASS =
-	"min-h-11 w-full rounded-md border px-4 py-2 text-sm font-semibold sm:w-auto disabled:cursor-not-allowed disabled:opacity-50";
 
 /**
  * Aviso compacto quando a placa parou de procurar o scanner OBD após várias
@@ -38,27 +36,29 @@ export function ScannerReconnect({
 	return (
 		<section
 			aria-label="Busca pelo scanner"
-			className="flex flex-col gap-2 rounded-lg border border-amber-300/40 bg-amber-300/10 px-3 py-2 text-sm text-amber-100 sm:flex-row sm:items-center sm:justify-between"
+			className="flex flex-col gap-2 rounded-lg border border-status-warn/40 bg-status-warn/10 px-3 py-2 text-sm text-status-warn sm:flex-row sm:items-center sm:justify-between"
 		>
 			<p className="m-0 min-w-0 break-words">
 				Busca pelo scanner pausada após várias tentativas — o Bluetooth fica
 				livre para o Wi‑Fi.
 			</p>
-			<button
-				type="button"
+			<Button
+				variant="secondary"
 				onClick={() => void handleClick()}
 				disabled={pending}
-				className={cn(
-					BUTTON_CLASS,
-					"border-amber-300/50 bg-amber-300/10 text-amber-100 hover:bg-amber-300/20",
-				)}
+				className="w-full border-status-warn/50 bg-status-warn/10 text-status-warn hover:bg-status-warn/20 sm:w-auto"
 			>
 				{pending ? "Procurando…" : "Procurar scanner"}
-			</button>
+			</Button>
 			{error !== null && (
-				<p role="alert" className="m-0 break-words text-rose-300 sm:basis-full">
+				<Alert
+					tone="error"
+					showPrefix={false}
+					role="alert"
+					className="break-words sm:basis-full"
+				>
 					{error}
-				</p>
+				</Alert>
 			)}
 		</section>
 	);

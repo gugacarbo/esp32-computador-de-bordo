@@ -8,6 +8,7 @@ import {
 	parseLogsText,
 } from "../lib/logs";
 import { cn } from "../lib/utils";
+import { Alert } from "./ui/alert";
 
 const POLL_MS = 3000;
 const FETCH_TIMEOUT_MS = 2000;
@@ -20,17 +21,17 @@ const LEVEL_LABEL: Record<LogLevel, string> = {
 };
 
 const LEVEL_CLASSES: Record<LogLevel, string> = {
-	error: "border-rose-400/40 bg-rose-400/10 text-rose-300",
-	warn: "border-amber-300/40 bg-amber-300/10 text-amber-200",
-	info: "border-slate-300/30 bg-slate-300/10 text-slate-200",
-	debug: "border-slate-600/40 bg-transparent text-slate-500",
+	error: "border-status-error/40 bg-status-error/10 text-status-error",
+	warn: "border-status-warn/40 bg-status-warn/10 text-status-warn",
+	info: "border-line bg-surface-raised text-fg",
+	debug: "border-line bg-transparent text-status-muted",
 };
 
 function LogRow({ entry }: { entry: LogEntry }): ReactElement {
 	return (
-		<li className="flex min-w-0 flex-col gap-0.5 border-t border-slate-800 py-1.5 first:border-t-0">
+		<li className="flex min-w-0 flex-col gap-0.5 border-t border-line py-1.5 first:border-t-0">
 			<div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5">
-				<span className="tabular-nums text-slate-400">
+				<span className="tabular-nums text-fg-muted">
 					{formatUptime(entry.uptimeMs)}
 				</span>
 				<span
@@ -41,9 +42,9 @@ function LogRow({ entry }: { entry: LogEntry }): ReactElement {
 				>
 					{LEVEL_LABEL[entry.level]}
 				</span>
-				<span className="min-w-0 break-words text-sky-300">{entry.tag}</span>
+				<span className="min-w-0 break-words text-accent">{entry.tag}</span>
 			</div>
-			<p className="m-0 min-w-0 break-words text-slate-200">{entry.message}</p>
+			<p className="m-0 min-w-0 break-words text-fg">{entry.message}</p>
 		</li>
 	);
 }
@@ -110,28 +111,33 @@ export function DiagnosticsPanel(): ReactElement {
 	return (
 		<details
 			id="diagnostics"
-			className="rounded-lg border border-slate-700/60 bg-slate-900 px-3 py-2 text-sm"
+			className="rounded-lg border border-line/60 bg-surface-raised px-3 py-2 text-sm"
 			onToggle={(event) => setOpen(event.currentTarget.open)}
 		>
-			<summary className="cursor-pointer select-none font-semibold text-slate-300">
+			<summary className="cursor-pointer select-none font-semibold text-fg">
 				Diagnóstico
 			</summary>
 			<div className="mt-2 flex flex-col gap-2 font-mono text-xs">
 				{error !== null && (
-					<p role="alert" className="m-0 break-words text-rose-300">
+					<Alert
+						tone="error"
+						showPrefix={false}
+						role="alert"
+						className="break-words"
+					>
 						{error}
-					</p>
+					</Alert>
 				)}
 				{snapshot === null && error === null && (
-					<p className="m-0 text-slate-400">Carregando logs…</p>
+					<p className="m-0 text-fg-muted">Carregando logs…</p>
 				)}
 				{snapshot !== null && snapshot.dropped > 0 && (
-					<p className="m-0 text-amber-200">
+					<p className="m-0 text-status-warn">
 						{snapshot.dropped} entradas descartadas
 					</p>
 				)}
 				{snapshot !== null && entries.length === 0 && (
-					<p className="m-0 text-slate-400">Nenhuma entrada registrada.</p>
+					<p className="m-0 text-fg-muted">Nenhuma entrada registrada.</p>
 				)}
 				{entries.length > 0 && (
 					<ul className="m-0 flex max-h-96 min-w-0 list-none flex-col overflow-y-auto p-0">

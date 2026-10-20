@@ -304,11 +304,12 @@ int main() {
     bt.statusValue.custom = true;
     bt.statusValue.config = {"OBD \"II\"", "1234", "AA:BB:CC:DD:EE:FF"};
     bt.statusValue.scan.state = BtScanState::Done;
-    bt.statusValue.scan.devices = {{"OBDII", "11:22:33:44:55:66", -60, true}, {"", "77:88:99:AA:BB:CC", 0, false}};
+    bt.statusValue.scan.devices = {{"OBDII", "11:22:33:44:55:66", -60, true, 0x1F00, true},
+                                   {"", "77:88:99:AA:BB:CC", 0, false, 0, false}};
     auto status = router.handle({HttpMethod::Get, "/api/obd/config"});
     assert(status.status == 200 && status.headerValue("Cache-Control") == "no-store");
     assert(status.body ==
-           R"JSON({"custom":true,"name":"OBD \"II\"","pin":"1234","mac":"AA:BB:CC:DD:EE:FF","scan":{"state":"done","devices":[{"name":"OBDII","mac":"11:22:33:44:55:66","rssi":-60},{"name":"","mac":"77:88:99:AA:BB:CC","rssi":null}]}})JSON");
+           R"JSON({"custom":true,"name":"OBD \"II\"","pin":"1234","mac":"AA:BB:CC:DD:EE:FF","scan":{"state":"done","devices":[{"name":"OBDII","mac":"11:22:33:44:55:66","rssi":-60,"cod":7936},{"name":"","mac":"77:88:99:AA:BB:CC","rssi":null,"cod":null}]}})JSON");
 
     auto post = [&router](const std::string& body) {
       HttpRequest request{HttpMethod::Post, "/api/obd/config"};

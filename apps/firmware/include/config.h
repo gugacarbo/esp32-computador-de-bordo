@@ -109,6 +109,8 @@ constexpr uint32_t ONIX_BT_INIT_TIMEOUT_MS = 30000;  // ADR-0004: busca automát
 // Busca BT curta (múltiplo de 1,28 s) só para achar o MAC pelo nome; depois conecta direto pelo MAC.
 // A busca ocupa o rádio e derruba o SoftAP enquanto dura, por isso é curta e rara.
 constexpr uint32_t ONIX_BT_DISCOVERY_MS = 5120;
+// Busca do botão "Buscar" do painel: mais longa para listar mais dispositivos (8 x 1,28 s).
+constexpr uint32_t ONIX_BT_PANEL_SCAN_MS = 10240;
 constexpr uint8_t ONIX_BT_MAC_RETRIES = 3;  // falhas seguidas pelo MAC antes de buscar de novo
 // Falhas seguidas de conexão BT antes de parar a busca (cada uma ocupa o rádio e derruba o Wi-Fi);
 // a busca só volta com POST /api/obd/reconnect (painel) ou reboot.

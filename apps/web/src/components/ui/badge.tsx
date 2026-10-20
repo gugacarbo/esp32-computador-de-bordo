@@ -3,16 +3,22 @@ import type { StatusTone } from "../../lib/envelope";
 import { cn } from "../../lib/utils";
 
 const TONE_CLASSES: Record<StatusTone, string> = {
-	ok: "border-emerald-400/30 bg-emerald-400/10 text-emerald-300",
-	warn: "border-amber-300/30 bg-amber-300/10 text-amber-200",
-	error: "border-rose-400/30 bg-rose-400/10 text-rose-300",
-	muted: "border-slate-500/30 bg-slate-500/10 text-slate-400",
+	ok: "border-status-ok/30 bg-status-ok/10 text-status-ok",
+	warn: "border-status-warn/30 bg-status-warn/10 text-status-warn",
+	error: "border-status-error/30 bg-status-error/10 text-status-error",
+	muted: "border-status-muted/30 bg-status-muted/10 text-status-muted",
 };
 
+/** Propriedades do {@link Badge}; aceita todos os atributos de `<span>`. */
 interface BadgeProps extends HTMLAttributes<HTMLSpanElement> {
+	/** Tom semântico do status: `ok`, `warn`, `error` ou `muted` (padrão). */
 	tone?: StatusTone;
 }
 
+/**
+ * Etiqueta compacta para exibir o estado de algo (ex.: conexão, sensor).
+ * Renderiza um `<span>` em formato de pílula colorido pelo `tone`.
+ */
 export function Badge({
 	className,
 	tone = "muted",

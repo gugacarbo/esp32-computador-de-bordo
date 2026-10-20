@@ -15,3 +15,5 @@ apps/firmware/data/assets/
 
 # Artefatos do Playwright MCP (capturas e logs locais)
 .playwright-mcp/
+storybook-static
+.claude/worktrees/

@@ -20,6 +20,8 @@ export interface BtDevice {
 	name: string;
 	mac: string;
 	rssi: number | null;
+	/** Class of Device anunciada na busca (tipo do aparelho); null quando ausente. */
+	cod: number | null;
 }
 
 export interface BtConfigStatus {
@@ -50,10 +52,12 @@ function isScanState(value: unknown): value is BtScanState {
 
 function parseDevice(json: unknown): BtDevice | null {
 	if (typeof json !== "object" || json === null) return null;
-	const { name, mac, rssi } = json as Record<string, unknown>;
+	const { name, mac, rssi, cod } = json as Record<string, unknown>;
 	if (typeof name !== "string" || typeof mac !== "string") return null;
 	if (rssi !== null && typeof rssi !== "number") return null;
-	return { name, mac, rssi };
+	// `cod` ausente (firmware antigo) vale como null.
+	if (cod !== undefined && cod !== null && typeof cod !== "number") return null;
+	return { name, mac, rssi, cod: typeof cod === "number" ? cod : null };
 }
 
 /** Valida um valor já decodificado contra o contrato de GET /api/obd/config. */
@@ -147,12 +151,42 @@ export function scanStateLabel(state: BtScanState): string {
 			return "";
 		case "pending":
 		case "scanning":
-			return "Buscando dispositivos (cerca de 5 s)…";
+			return "Buscando dispositivos (cerca de 10 s)…";
 		case "done":
 			return "Busca concluída.";
 		case "busy":
 			return "O scanner está conectado: a busca só funciona desconectada.";
 		case "failed":
 			return "A placa não conseguiu buscar. Tente de novo.";
+	}
+}
+
+/**
+ * Tipo do aparelho pela classe principal da Class of Device (bits 8–12, Bluetooth Assigned
+ * Numbers). Scanners ELM327 costumam anunciar "Sem categoria" ou não anunciar a classe.
+ */
+export function deviceClassLabel(cod: number | null): string {
+	if (cod === null) return "Tipo desconhecido";
+	switch ((cod >> 8) & 0x1f) {
+		case 0x01:
+			return "Computador";
+		case 0x02:
+			return "Celular";
+		case 0x03:
+			return "Rede";
+		case 0x04:
+			return "Áudio/vídeo";
+		case 0x05:
+			return "Periférico";
+		case 0x06:
+			return "Imagem";
+		case 0x07:
+			return "Vestível";
+		case 0x08:
+			return "Brinquedo";
+		case 0x09:
+			return "Saúde";
+		default:
+			return "Sem categoria";
 	}
 }

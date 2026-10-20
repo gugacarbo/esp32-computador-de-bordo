@@ -19,6 +19,7 @@
 
 #include "esp_gap_bt_api.h"
 
+#include <algorithm>
 #include <atomic>
 #include <cstdlib>
 #include <mutex>
@@ -254,7 +255,7 @@ class Elm327BtTransport : public ObdTransport {
       return;
     }
     setScanState(BtScanState::Scanning);
-    BTScanResults* results = SerialBT.discover(ONIX_BT_DISCOVERY_MS);
+    BTScanResults* results = SerialBT.discover(ONIX_BT_PANEL_SCAN_MS);
     std::vector<BtDevice> devices;
     if (results != nullptr) {
       for (int i = 0; i < results->getCount(); ++i) {
@@ -267,8 +268,15 @@ class Elm327BtTransport : public ObdTransport {
         device.mac = formatBtMac(mac);
         device.hasRssi = found->haveRSSI();
         device.rssi = device.hasRssi ? found->getRSSI() : 0;
+        device.hasCod = found->haveCOD();
+        device.cod = device.hasCod ? found->getCOD() : 0;
         devices.push_back(device);
       }
+      // Sinal mais forte primeiro (o scanner, no carro, costuma ser o mais próximo); sem RSSI no fim.
+      std::stable_sort(devices.begin(), devices.end(), [](const BtDevice& a, const BtDevice& b) {
+        if (a.hasRssi != b.hasRssi) return a.hasRssi;
+        return a.rssi > b.rssi;
+      });
     }
     std::lock_guard<std::mutex> lock(g_scanMutex);
     g_scanResult.devices = std::move(devices);

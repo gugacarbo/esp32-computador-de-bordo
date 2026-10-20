@@ -179,6 +179,19 @@
     "implemented-by": []
   },
   {
+    "id": "ADR-0015",
+    "path": "docs/adr/0015-define-tokens-de-design-e-tema-escuro-do-painel.md",
+    "layer": "adr",
+    "title": "Define tokens de design e tema escuro do painel",
+    "status": "accepted",
+    "builds-on": [
+      "ADR-0007",
+      "ADR-0010"
+    ],
+    "superseded-by": null,
+    "implemented-by": []
+  },
+  {
     "id": "SPEC-0001",
     "path": "docs/specs/0001-coleta-sensores-obd-e-recupera-a-conexao.md",
     "layer": "specs",

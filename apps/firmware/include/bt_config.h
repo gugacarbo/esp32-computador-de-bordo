@@ -37,6 +37,8 @@ struct BtDevice {
   std::string mac;   // "AA:BB:CC:DD:EE:FF"
   int rssi = 0;
   bool hasRssi = false;
+  uint32_t cod = 0;  // Class of Device (tipo: celular, computador, áudio...), quando anunciado
+  bool hasCod = false;
 };
 
 // idle: nunca buscou; pending: pedido aceito, aguardando a task OBD; scanning: buscando;
@@ -58,7 +60,8 @@ struct BtConfigStatus {
 };
 
 // {"custom":false,"name":"OBDII","pin":"1234","mac":"","scan":{"state":"done","devices":[
-//  {"name":"OBDII","mac":"AA:BB:CC:DD:EE:FF","rssi":-60}]}} — "rssi" é null sem medida.
+//  {"name":"OBDII","mac":"AA:BB:CC:DD:EE:FF","rssi":-60,"cod":7936}]}} — "rssi" e "cod" são null
+//  quando o dispositivo não os anunciou. A lista sai ordenada do sinal mais forte ao mais fraco.
 std::string serializeBtConfigStatusJson(const BtConfigStatus& status);
 
 // Implementada em main.cpp (NVS + task OBD); fakes nos testes.

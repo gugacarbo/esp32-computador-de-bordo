@@ -38,6 +38,8 @@ bun run dev
 .venv/bin/pio test -d apps/firmware -e native
 .venv/bin/pio run -d apps/firmware -e esp32doit-devkit-v1
 bun run firmware:test:web
+# Storybook (stories em apps/web/src, config em apps/storybook)
+bun run --filter '@esp32-computador-de-bordo/storybook' dev
 ```
 
 ## Como validar (DoD global do repo)
@@ -82,12 +84,13 @@ Somente validação local sem placa: `bun scripts/web-deploy.mjs --build-only`.
 
 ## Mapa do repositório
 
-| Caminho          | Conteúdo                                                                                                |
-| ---------------- | ------------------------------------------------------------------------------------------------------- |
-| `apps/web/`      | Painel React+Vite (Tailwind/shadcn mínimo, WS porta 81 + fallback HTTP), testes Bun e stage p/ LittleFS |
-| `apps/firmware/` | Firmware PlatformIO do ESP32: OBD, API, painel LittleFS + WS, testes nativos e web                      |
-| `packages/`      | Pacotes compartilhados; crie um workspace quando houver consumidores reais                              |
-| raiz             | Workspaces Bun, lockfile, ferramentas, scripts globais, CI e documentação CASA                          |
+| Caminho           | Conteúdo                                                                                                    |
+| ----------------- | ----------------------------------------------------------------------------------------------------------- |
+| `apps/web/`       | Painel React+Vite (Tailwind/shadcn mínimo, WS porta 81 + fallback HTTP), testes Bun e stage p/ LittleFS     |
+| `apps/storybook/` | Storybook (react-vite + MCP) do painel web; stories ficam em `apps/web/src`; ver `apps/storybook/AGENTS.md` |
+| `apps/firmware/`  | Firmware PlatformIO do ESP32: OBD, API, painel LittleFS + WS, testes nativos e web                          |
+| `packages/`       | Pacotes compartilhados; crie um workspace quando houver consumidores reais                                  |
+| raiz              | Workspaces Bun, lockfile, ferramentas, scripts globais, CI e documentação CASA                              |
 
 ## Mapa de contexto
 

@@ -111,6 +111,8 @@ std::string serializeBtConfigStatusJson(const BtConfigStatus& status) {
     appendJsonEscaped(out, device.mac);
     out += "\",\"rssi\":";
     out += device.hasRssi ? std::to_string(device.rssi) : "null";
+    out += ",\"cod\":";
+    out += device.hasCod ? std::to_string(device.cod) : "null";
     out += '}';
   }
   out += "]}}";

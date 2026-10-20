@@ -9,9 +9,11 @@ import {
 import {
 	BT_CONFIG_PATH,
 	BT_SCAN_PATH,
+	type BtConfigInput,
 	type BtConfigStatus,
 	type BtDevice,
 	describeBtError,
+	deviceClassLabel,
 	isScanRunning,
 	normalizeMac,
 	parseBtConfigStatus,
@@ -19,17 +21,14 @@ import {
 	validateBtConfig,
 } from "../lib/btconfig";
 import { cn } from "../lib/utils";
+import { Alert } from "./ui/alert";
+import { Button } from "./ui/button";
+import { Field } from "./ui/field";
 
 const FETCH_TIMEOUT_MS = 5000;
 const SCAN_POLL_MS = 1000;
 const SCAN_MAX_POLLS = 20;
 const NETWORK_ERROR = "Sem resposta da placa. Tente de novo.";
-
-const INPUT_CLASS =
-	"w-full rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-base text-slate-100 placeholder:text-slate-500 focus-visible:outline-2 focus-visible:outline-sky-400";
-
-const BUTTON_BASE =
-	"min-h-11 rounded-md border px-4 py-2 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-50";
 
 interface Feedback {
 	tone: "ok" | "error";
@@ -74,9 +73,9 @@ async function requestBt(
 	}
 }
 
-function deviceLabel(device: BtDevice): string {
-	const name = device.name || "(sem nome)";
-	return device.rssi === null ? name : `${name} · ${device.rssi} dBm`;
+function deviceDetails(device: BtDevice): string {
+	const kind = deviceClassLabel(device.cod);
+	return device.rssi === null ? kind : `${kind} · ${device.rssi} dBm`;
 }
 
 /**
@@ -179,7 +178,20 @@ export function BluetoothPanel(): ReactElement {
 
 	async function handleSave(event: FormEvent<HTMLFormElement>): Promise<void> {
 		event.preventDefault();
-		const input = { name: name.trim(), pin, mac: normalizeMac(mac) };
+		await saveConfig({ name: name.trim(), pin, mac: normalizeMac(mac) });
+	}
+
+	/** "Usar" na lista: grava o MAC do dispositivo (e o nome, se houver) mantendo o PIN do formulário. */
+	async function applyDevice(device: BtDevice): Promise<void> {
+		choose(device);
+		await saveConfig({
+			name: device.name || name.trim(),
+			pin,
+			mac: device.mac,
+		});
+	}
+
+	async function saveConfig(input: BtConfigInput): Promise<void> {
 		const formError = validateBtConfig(input);
 		if (formError !== null) {
 			setFeedback({ tone: "error", text: formError });
@@ -188,7 +200,7 @@ export function BluetoothPanel(): ReactElement {
 		setBusy(true);
 		setFeedback(null);
 		try {
-			const result = await requestBt(BT_CONFIG_PATH, "POST", input);
+			const result = await requestBt(BT_CONFIG_PATH, "POST", { ...input });
 			if (result.status === 200) {
 				setFeedback({
 					tone: "ok",
@@ -239,32 +251,32 @@ export function BluetoothPanel(): ReactElement {
 	return (
 		<details
 			id="bluetooth"
-			className="rounded-lg border border-slate-700/60 bg-slate-900 px-3 py-2 text-sm"
+			className="rounded-card border border-line bg-surface-raised px-3 py-2 text-sm"
 			onToggle={(event) => setOpen(event.currentTarget.open)}
 		>
-			<summary className="cursor-pointer select-none font-semibold text-slate-300">
+			<summary className="cursor-pointer select-none font-semibold text-fg">
 				Scanner Bluetooth
 			</summary>
 			<div className="mt-3 flex flex-col gap-4">
 				{statusError !== null && (
-					<p role="alert" className="m-0 break-words text-rose-300">
+					<Alert tone="error" showPrefix={false} role="alert">
 						{statusError}
-					</p>
+					</Alert>
 				)}
 				{status !== null && (
 					<dl className="m-0 grid grid-cols-[auto_1fr] gap-x-3 gap-y-1">
-						<dt className="text-slate-400">Em uso</dt>
-						<dd className="m-0 min-w-0 break-words text-slate-100">
+						<dt className="text-fg-muted">Em uso</dt>
+						<dd className="m-0 min-w-0 break-words text-fg">
 							{status.name || "(sem nome)"}
 							{status.mac !== "" && (
-								<span className="tabular-nums text-slate-400">
+								<span className="tabular-nums text-fg-muted">
 									{" "}
 									· {status.mac}
 								</span>
 							)}
 						</dd>
-						<dt className="text-slate-400">Origem</dt>
-						<dd className="m-0 text-slate-100">
+						<dt className="text-fg-muted">Origem</dt>
+						<dd className="m-0 text-fg">
 							{status.custom ? "Configurado pelo painel" : "Padrão do firmware"}
 						</dd>
 					</dl>
@@ -277,53 +289,72 @@ export function BluetoothPanel(): ReactElement {
 					<div className="flex flex-wrap items-center justify-between gap-2">
 						<h2
 							id="bt-scan-title"
-							className="m-0 text-sm font-semibold text-slate-200"
+							className="m-0 text-sm font-semibold text-fg"
 						>
 							Dispositivos próximos
 						</h2>
-						<button
-							type="button"
+						<Button
+							variant="secondary"
 							onClick={() => void handleScan()}
 							disabled={scanning || busy}
-							className={cn(
-								BUTTON_BASE,
-								"border-sky-400/40 bg-sky-400/10 text-sky-300 hover:bg-sky-400/20",
-							)}
+							className="border-accent/40 bg-accent/10 text-accent hover:bg-accent/20"
 						>
 							{scanning ? "Buscando…" : "Buscar"}
-						</button>
+						</Button>
 					</div>
 					{scanLabel !== "" && (
-						<p className="m-0 text-xs text-slate-400" aria-live="polite">
+						<p className="m-0 text-xs text-fg-muted" aria-live="polite">
 							{scanLabel}
 						</p>
 					)}
 					{!scanning && scanState === "done" && devices.length === 0 && (
-						<p className="m-0 text-slate-400">
+						<p className="m-0 text-fg-muted">
 							Nenhum dispositivo encontrado. Confira se o scanner está ligado.
+						</p>
+					)}
+					{(scanState === "done" || devices.length > 0) && (
+						<p className="m-0 text-xs text-fg-muted">
+							Aparecem só aparelhos Bluetooth Classic visíveis: dispositivos só
+							BLE (incompatíveis com o ELM327 SPP) e celulares fora da tela de
+							Bluetooth não respondem à busca.
 						</p>
 					)}
 					{devices.length > 0 && (
 						<ul className="m-0 flex list-none flex-col gap-1 p-0">
 							{devices.map((device) => (
-								<li key={device.mac}>
-									<button
+								<li key={device.mac} className="flex items-stretch gap-1">
+									<Button
 										type="button"
+										variant="secondary"
 										onClick={() => choose(device)}
+										aria-label={`Preencher o formulário com ${device.name || device.mac}`}
 										className={cn(
-											"flex min-h-11 w-full flex-col items-start rounded-md border px-3 py-2 text-left",
+											"min-w-0 flex-1 flex-col items-start justify-start gap-0 px-3 py-2 text-left font-normal",
 											normalizeMac(mac) === device.mac
-												? "border-emerald-400/60 bg-emerald-400/10"
-												: "border-slate-700 bg-slate-950 hover:bg-slate-800",
+												? "border-status-ok/60 bg-status-ok/10"
+												: "border-line bg-surface hover:bg-line",
 										)}
 									>
-										<span className="break-all text-slate-100">
-											{deviceLabel(device)}
+										<span className="break-all text-fg">
+											{device.name || "(sem nome)"}
 										</span>
-										<span className="text-xs tabular-nums text-slate-400">
+										<span className="text-xs text-fg-muted">
+											{deviceDetails(device)}
+										</span>
+										<span className="text-xs tabular-nums text-fg-muted">
 											{device.mac}
 										</span>
-									</button>
+									</Button>
+									<Button
+										type="button"
+										variant="secondary"
+										onClick={() => void applyDevice(device)}
+										disabled={busy || scanning}
+										aria-label={`Usar ${device.name || device.mac} como scanner`}
+										className="shrink-0 border-status-ok/40 bg-status-ok/10 text-status-ok hover:bg-status-ok/20"
+									>
+										Usar
+									</Button>
 								</li>
 							))}
 						</ul>
@@ -335,95 +366,65 @@ export function BluetoothPanel(): ReactElement {
 					onSubmit={(event) => void handleSave(event)}
 					noValidate
 				>
-					<div className="flex flex-col gap-1">
-						<label htmlFor="bt-name" className="font-semibold text-slate-200">
-							Nome do scanner
-						</label>
-						<input
-							id="bt-name"
-							type="text"
-							autoComplete="off"
-							autoCapitalize="none"
-							spellCheck={false}
-							value={name}
-							onChange={(event) => setName(event.target.value)}
-							className={INPUT_CLASS}
-						/>
-					</div>
-					<div className="flex flex-col gap-1">
-						<label htmlFor="bt-mac" className="font-semibold text-slate-200">
-							MAC
-						</label>
-						<input
-							id="bt-mac"
-							type="text"
-							autoComplete="off"
-							autoCapitalize="characters"
-							spellCheck={false}
-							placeholder="AA:BB:CC:DD:EE:FF"
-							aria-describedby="bt-mac-hint"
-							value={mac}
-							onChange={(event) => setMac(event.target.value)}
-							className={cn(INPUT_CLASS, "tabular-nums")}
-						/>
-						<p id="bt-mac-hint" className="m-0 text-xs text-slate-400">
-							Com o MAC a placa conecta direto, sem buscar pelo nome (menos
-							impacto no Wi-Fi).
-						</p>
-					</div>
-					<div className="flex flex-col gap-1">
-						<label htmlFor="bt-pin" className="font-semibold text-slate-200">
-							PIN
-						</label>
-						<input
-							id="bt-pin"
-							type="text"
-							inputMode="numeric"
-							autoComplete="off"
-							aria-describedby="bt-pin-hint"
-							value={pin}
-							onChange={(event) => setPin(event.target.value)}
-							className={INPUT_CLASS}
-						/>
-						<p id="bt-pin-hint" className="m-0 text-xs text-slate-400">
-							Geralmente 1234 ou 0000.
-						</p>
-					</div>
+					<Field
+						id="bt-name"
+						label="Nome do scanner"
+						type="text"
+						autoComplete="off"
+						autoCapitalize="none"
+						spellCheck={false}
+						value={name}
+						onChange={(event) => setName(event.target.value)}
+					/>
+					<Field
+						id="bt-mac"
+						label="MAC"
+						type="text"
+						autoComplete="off"
+						autoCapitalize="characters"
+						spellCheck={false}
+						placeholder="AA:BB:CC:DD:EE:FF"
+						hint="Com o MAC a placa conecta direto, sem buscar pelo nome (menos impacto no Wi-Fi)."
+						hintId="bt-mac-hint"
+						className="tabular-nums"
+						value={mac}
+						onChange={(event) => setMac(event.target.value)}
+					/>
+					<Field
+						id="bt-pin"
+						label="PIN"
+						type="text"
+						inputMode="numeric"
+						autoComplete="off"
+						hint="Geralmente 1234 ou 0000."
+						hintId="bt-pin-hint"
+						value={pin}
+						onChange={(event) => setPin(event.target.value)}
+					/>
 					<div className="flex flex-col gap-2 sm:flex-row">
-						<button
+						<Button
 							type="submit"
+							variant="secondary"
 							disabled={busy || scanning}
-							className={cn(
-								BUTTON_BASE,
-								"border-emerald-400/40 bg-emerald-400/10 text-emerald-300 hover:bg-emerald-400/20",
-							)}
+							className="border-status-ok/40 bg-status-ok/10 text-status-ok hover:bg-status-ok/20"
 						>
 							{busy ? "Salvando…" : "Salvar e conectar"}
-						</button>
-						<button
-							type="button"
+						</Button>
+						<Button
+							variant="secondary"
 							onClick={() => void handleReset()}
 							disabled={busy || scanning || status?.custom === false}
-							className={cn(
-								BUTTON_BASE,
-								"border-rose-400/40 bg-rose-400/10 text-rose-300 hover:bg-rose-400/20",
-							)}
+							className="border-status-error/40 bg-status-error/10 text-status-error hover:bg-status-error/20"
 						>
 							Restaurar padrão
-						</button>
+						</Button>
 					</div>
 				</form>
 
 				{feedback !== null && (
-					<p
-						role="alert"
-						className={cn(
-							"m-0 break-words",
-							feedback.tone === "ok" ? "text-emerald-300" : "text-rose-300",
-						)}
-					>
+					<Alert tone={feedback.tone} showPrefix={false} role="alert">
 						{feedback.text}
-					</p>
+					</Alert>
 				)}
 			</div>
 		</details>

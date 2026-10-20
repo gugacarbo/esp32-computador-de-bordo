@@ -1,0 +1,30 @@
+{
+	"name": "@esp32-computador-de-bordo/storybook",
+	"version": "0.1.0",
+	"private": true,
+	"type": "module",
+	"engines": {
+		"bun": ">=1.2.0"
+	},
+	"scripts": {
+		"dev": "node scripts/dev.mjs",
+		"storybook": "node scripts/dev.mjs",
+		"build": "storybook build -o storybook-static",
+		"typecheck": "tsc --noEmit",
+		"test": "echo 'sem testes no workspace storybook'"
+	},
+	"dependencies": {
+		"react": "^19.3.1",
+		"react-dom": "^19.3.1"
+	},
+	"devDependencies": {
+		"@storybook/addon-mcp": "^10.6.2",
+		"@storybook/react-vite": "^10.6.2",
+		"@tailwindcss/vite": "^4.3.3",
+		"@types/react": "^19",
+		"@types/react-dom": "^19",
+		"storybook": "^10.6.2",
+		"typescript": "^7.0.2",
+		"vite": "^8.3.4"
+	}
+}

@@ -9,6 +9,7 @@ import {
 } from "../lib/envelope";
 import { Badge } from "./ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "./ui/card";
+import { Stat } from "./ui/stat";
 
 interface SensorCardProps {
 	sensor: SensorKey;
@@ -57,13 +58,16 @@ export function SensorCard({
 				<CardTitle>{title}</CardTitle>
 			</CardHeader>
 			<CardContent className="flex flex-col gap-1">
-				<p className="m-0 text-3xl leading-none tabular-nums">
-					<span id={`value-${sensor}`}>{value}</span>
-					<span className="ml-1 text-sm text-slate-400">{unit}</span>
-				</p>
+				<Stat
+					bare
+					size="md"
+					value={value}
+					unit={unit}
+					valueId={`value-${sensor}`}
+				/>
 				{state !== "" && <Badge tone={tone}>{state}</Badge>}
 				{note !== "" && (
-					<p className="m-0 min-h-4 text-xs text-slate-400">{note}</p>
+					<p className="m-0 min-h-4 text-xs text-fg-muted">{note}</p>
 				)}
 			</CardContent>
 		</Card>
