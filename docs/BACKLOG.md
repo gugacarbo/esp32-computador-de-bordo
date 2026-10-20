@@ -20,6 +20,7 @@ formato da tabela é apontada pelo comando, nunca lida em silêncio.
 | 0012 | Conecta ao hotspot do celular com fallback para o SoftAP      | 2026-10-19 | em uso   |
 | 0013 | Isola OBD no núcleo 0 e para a busca Bluetooth após falhas    | 2026-10-19 | em uso   |
 | 0014 | Configura o scanner Bluetooth pelo painel sem senha do OTA    | 2026-10-19 | em uso   |
+| 0018 | Persiste logs do firmware no LittleFS com lote e rotacao | 2026-10-20 | em uso |
 
 ## Reservas Spec
 
@@ -28,3 +29,4 @@ formato da tabela é apontada pelo comando, nunca lida em silêncio.
 | 0001 | Coleta sensores OBD e recupera a conexão | 2026-10-13 | em uso   |
 | 0002 | Expõe o estado das leituras na API local | 2026-10-13 | em uso   |
 | 0003 | Exibe o painel offline no Android        | 2026-10-13 | em uso   |
+| 0004 | Diagnostico com historico persistido de logs | 2026-10-20 | em uso |

@@ -129,12 +129,12 @@
     "path": "docs/adr/0011-registra-logs-do-firmware-em-buffer-circular-exposto-por-http.md",
     "layer": "adr",
     "title": "Registra logs do firmware em buffer circular exposto por HTTP",
-    "status": "accepted",
+    "status": "superseded",
     "builds-on": [
       "ADR-0004",
       "ADR-0009"
     ],
-    "superseded-by": null,
+    "superseded-by": "ADR-0018",
     "implemented-by": []
   },
   {
@@ -219,6 +219,20 @@
     "implemented-by": []
   },
   {
+    "id": "ADR-0018",
+    "path": "docs/adr/0018-persiste-logs-do-firmware-no-littlefs-com-lote-e-rotacao.md",
+    "layer": "adr",
+    "title": "Persiste logs do firmware no LittleFS com lote e rotacao",
+    "status": "accepted",
+    "builds-on": [
+      "ADR-0004",
+      "ADR-0009",
+      "ADR-0011"
+    ],
+    "superseded-by": null,
+    "implemented-by": []
+  },
+  {
     "id": "SPEC-0001",
     "path": "docs/specs/0001-coleta-sensores-obd-e-recupera-a-conexao.md",
     "layer": "specs",
@@ -275,5 +289,19 @@
       "apps/firmware/include/ws_broadcast.h",
       "scripts/web-deploy.mjs"
     ]
+  },
+  {
+    "id": "SPEC-0004",
+    "path": "docs/specs/0004-diagnostico-com-historico-persistido-de-logs.md",
+    "layer": "specs",
+    "title": "Exibe e baixa o histórico de logs persistido no LittleFS",
+    "status": "accepted",
+    "builds-on": [
+      "ADR-0018",
+      "ADR-0005",
+      "ADR-0011"
+    ],
+    "superseded-by": null,
+    "implemented-by": []
   }
 ]

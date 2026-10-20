@@ -1,12 +1,16 @@
 ---
-status: accepted # proposed | accepted | deprecated | superseded
+status: superseded # proposed | accepted | deprecated | superseded
 date: 2026-10-19
 builds-on: [ADR-0004, ADR-0009] # ADRs relacionados: ADR-NNNN ou repo:ADR-NNNN
-superseded-by: null # escalar; preenchido no ADR antigo no commit que aceita o novo
+superseded-by: ADR-0018 # escalar; preenchido no ADR antigo no commit que aceita o novo
 deciders: ["project maintainer"]
 ---
 
 # Registra logs do firmware em buffer circular exposto por HTTP
+
+> ⚠️ VERDADE ATUAL: o buffer circular em RAM e o contrato de GET /api/logs continuam válidos.
+> A recusa em persistir logs no LittleFS (por desgaste e risco de corte) foi revogada pela
+> ADR-0018, que grava warn+ num arquivo com lote e rotação. Fonte atual: ADR-0018.
 
 ## Contexto e problema
 
