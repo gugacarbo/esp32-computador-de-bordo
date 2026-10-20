@@ -204,6 +204,21 @@
     "implemented-by": []
   },
   {
+    "id": "ADR-0017",
+    "path": "docs/adr/0017-redesign-mobile-first-do-painel-em-abas-inferiores.md",
+    "layer": "adr",
+    "title": "Redesign mobile-first do painel em abas inferiores",
+    "status": "accepted",
+    "builds-on": [
+      "ADR-0007",
+      "ADR-0010",
+      "ADR-0015",
+      "ADR-0016"
+    ],
+    "superseded-by": null,
+    "implemented-by": []
+  },
+  {
     "id": "SPEC-0001",
     "path": "docs/specs/0001-coleta-sensores-obd-e-recupera-a-conexao.md",
     "layer": "specs",

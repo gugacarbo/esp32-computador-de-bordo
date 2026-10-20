@@ -30,7 +30,8 @@ export default defineConfig({
 			// Os componentes ficam em apps/web (fora deste workspace); allowExternal permite incluí-los.
 			allowExternal: true,
 			include: ["../web/src/components/ui/**/*.tsx"],
-			exclude: ["**/*.stories.tsx"],
+			// Testes SSR de componentes testam via bun; não são código de UI produzido.
+			exclude: ["**/*.stories.tsx", "**/*.test.tsx"],
 			// Medido com os stories atuais: ~100% linhas/funções/instruções e ~95% ramos.
 			// Limite de 90% dá margem para pequenas variações; ramos ficam um pouco abaixo
 			// por causa de prefixos/título opcionais do Alert e do Stat sem story específica.

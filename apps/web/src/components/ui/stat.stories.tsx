@@ -21,9 +21,9 @@ const meta = {
 		},
 		size: {
 			control: "inline-radio",
-			options: ["md", "lg"],
+			options: ["md", "lg", "xl"],
 			description:
-				"Tamanho do valor: `lg` (padrão, text-4xl) ou `md` (text-3xl).",
+				"Tamanho do valor: `xl` (herói de relance, text-6xl), `lg` (padrão, text-4xl) ou `md` (text-3xl).",
 		},
 		bare: {
 			control: "boolean",
@@ -46,6 +46,15 @@ export const SemLeitura: Story = {
 };
 export const Compacto: Story = {
 	args: { size: "md", bare: true },
+};
+export const ExtraGrande: Story = {
+	args: {
+		label: "Velocidade",
+		value: 87,
+		unit: "km/h",
+		size: "xl",
+		bare: true,
+	},
 };
 export const SemRotulo: Story = {
 	args: { label: undefined, value: 2450, unit: "rpm" },

@@ -20,8 +20,8 @@ export interface StatProps extends HTMLAttributes<HTMLDivElement> {
 	tone?: StatusTone;
 	/** Id aplicado apenas ao elemento que contém o valor (sem a unidade), para leitura/atualização externa. */
 	valueId?: string;
-	/** Tamanho do valor: `lg` (padrão, text-4xl) ou `md` (text-3xl). */
-	size?: "md" | "lg";
+	/** Tamanho do valor: `xl` (text-6xl, herói de relance), `lg` (padrão, text-4xl) ou `md` (text-3xl). */
+	size?: "md" | "lg" | "xl";
 	/** Remove moldura, fundo e espaçamento, para uso dentro de outro cartão. */
 	bare?: boolean;
 }
@@ -55,7 +55,7 @@ export function Stat({
 			<span
 				className={cn(
 					"flex items-baseline gap-1 font-mono font-bold tabular-nums",
-					size === "lg" ? "text-4xl" : "text-3xl",
+					size === "lg" ? "text-4xl" : size === "xl" ? "text-6xl" : "text-3xl",
 					tone ? TONE_CLASSES[tone] : "text-fg",
 				)}
 			>
