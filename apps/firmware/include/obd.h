@@ -220,10 +220,14 @@ void requestObdReconnect();
 
 // Configuração do scanner em uso (ADR-0014), chamáveis de outra task. setObdScannerConfig aplica
 // já: o transporte esquece o MAC achado, reaplica o PIN e a sessão reconecta.
-void setObdScannerConfig(const BtScannerConfig& config);
+// `reconnect` = false só no boot, quando a sessão ainda não começou e não há o que retomar.
+void setObdScannerConfig(const BtScannerConfig& config, bool reconnect = true);
 BtScannerConfig obdScannerConfig();
 // Pede uma busca de dispositivos à task OBD; false se já houver uma pendente ou em andamento.
 bool requestObdScan();
+// Marca a entrega de um arquivo estático do painel (main.cpp): a task OBD adia a próxima tentativa
+// de conexão até ONIX_BT_HTTP_QUIET_MS sem entregas, para não ocupar o rádio durante o carregamento.
+void noteHttpStaticActivity();
 BtScanResult obdScanResult();
 
 }  // namespace onix

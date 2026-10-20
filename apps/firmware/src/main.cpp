@@ -16,10 +16,13 @@
 #include <LittleFS.h>
 #include <Preferences.h>
 #include <WebServer.h>
+#include <uri/UriGlob.h>
 #include <WebSocketsServer.h>
 #include <WiFi.h>
 
 #include <cstring>
+#include <set>
+#include <string>
 #include <optional>
 
 #include "esp_system.h"
@@ -143,7 +146,7 @@ class NvsBtConfig : public onix::BtConfigPort {
       custom_ = false;
       config = onix::defaultBtScannerConfig();
     }
-    onix::setObdScannerConfig(config);
+    onix::setObdScannerConfig(config, false);  // boot: a sessão ainda não começou
     if (custom_) {
       ONIX_LOGI("bt", "scanner da NVS: '%s' %s", config.name.c_str(), config.mac.c_str());
     }
@@ -256,6 +259,25 @@ const char* contentTypeForPath(const char* path) {
   return "application/octet-stream";
 }
 
+// Arquivos do LittleFS, listados uma vez no boot (o LittleFS só muda por uploadfs, que reinicia a
+// placa). Consultar a lista evita LittleFS.exists(), que nesta versão do core registra erro a cada
+// arquivo ausente — o .gz do index.html, por exemplo.
+std::set<std::string> g_staticFiles;
+
+void indexStaticFiles(const char* dirPath) {
+  File dir = LittleFS.open(dirPath);
+  if (!dir || !dir.isDirectory()) {
+    return;
+  }
+  for (File entry = dir.openNextFile(); entry; entry = dir.openNextFile()) {
+    if (entry.isDirectory()) {
+      indexStaticFiles(entry.path());
+    } else {
+      g_staticFiles.insert(entry.path());
+    }
+  }
+}
+
 // Tenta servir um arquivo do LittleFS; retorna false se não existir ou não abrir.
 // Rejeita ".." para não escapar do filesystem. Havendo sidecar .gz, ele é servido sempre
 // (ADR-0010); streamFile acrescenta Content-Encoding: gzip e mantém o Content-Type original.
@@ -263,19 +285,21 @@ bool tryServeLittleFS(const char* path) {
   if (strstr(path, "..") != nullptr) {
     return false;
   }
-  const String compressedPath = String(path) + ".gz";
-  const std::string selectedPath =
-      onix::selectAssetPath(path, LittleFS.exists(compressedPath));
-  if (!LittleFS.exists(selectedPath.c_str())) {
+  const bool compressedExists = g_staticFiles.count(std::string(path) + ".gz") > 0;
+  const std::string selectedPath = onix::selectAssetPath(path, compressedExists);
+  if (g_staticFiles.count(selectedPath) == 0) {
     return false;
   }
   File file = LittleFS.open(selectedPath.c_str(), "r");
   if (!file) {
     return false;
   }
+  // Painel carregando: a task OBD adia a conexão BT, que tomaria o rádio no meio do envio.
+  onix::noteHttpStaticActivity();
   g_server.sendHeader("Cache-Control", onix::cacheControlForAsset(path));
   g_server.streamFile(file, contentTypeForPath(path));
   file.close();
+  onix::noteHttpStaticActivity();
   return true;
 }
 
@@ -657,7 +681,8 @@ void setup() {
   if (!LittleFS.begin()) {
     ONIX_LOGW("fs", "falha ao montar o LittleFS; usando fallback embarcado");
   } else {
-    ONIX_LOGI("fs", "LittleFS montado");
+    indexStaticFiles("/");
+    ONIX_LOGI("fs", "LittleFS montado (%u arquivos)", static_cast<unsigned>(g_staticFiles.size()));
   }
 
   // POST /api/obd/reconnect (ADR-0013): o roteador só sinaliza; a task OBD retoma a busca no
@@ -675,6 +700,9 @@ void setup() {
   g_server.on(onix::API_ROUTE_OBD_RECONNECT, handleWithApiRouter);
   g_server.on(onix::API_ROUTE_OBD_CONFIG, handleWithApiRouter);
   g_server.on(onix::API_ROUTE_OBD_SCAN, handleWithApiRouter);
+  // Assets do painel com rota própria: pelo onNotFound o WebServer registraria "request handler
+  // not found" a cada arquivo.
+  g_server.on(UriGlob("/assets/*"), handleWithApiRouter);
   g_server.onNotFound(handleWithApiRouter);
   g_server.begin();
   ONIX_LOGI("http", "porta %u", static_cast<unsigned>(onix::ONIX_HTTP_PORT));

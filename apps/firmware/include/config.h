@@ -113,6 +113,9 @@ constexpr uint8_t ONIX_BT_MAC_RETRIES = 3;  // falhas seguidas pelo MAC antes de
 // Falhas seguidas de conexão BT antes de parar a busca (cada uma ocupa o rádio e derruba o Wi-Fi);
 // a busca só volta com POST /api/obd/reconnect (painel) ou reboot.
 constexpr uint8_t ONIX_BT_MAX_CONNECT_ATTEMPTS = 5;
+// Sem tentar conectar ao scanner até este tempo depois do último arquivo estático servido: a busca
+// BT ocupa o rádio e travava o envio do painel por ~5 s (o polling de /api/data e o WS não contam).
+constexpr uint32_t ONIX_BT_HTTP_QUIET_MS = 10000;
 
 // Protocolo do ELM327: '0' = busca automática; '6' = ISO 15765-4 CAN 11 bit 500 kbps (Onix 2019) pula a busca.
 constexpr char ONIX_OBD_PROTOCOL = '0';

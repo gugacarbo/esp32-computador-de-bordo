@@ -386,16 +386,28 @@ namespace {
 std::atomic<bool> g_obdPaused{false};
 std::atomic<bool> g_obdReconnectRequested{false};
 std::atomic<bool> g_obdScanRequested{false};
+std::atomic<uint64_t> g_lastHttpStaticMs{0};
+
+// Painel carregando agora há pouco: adiar conexão/busca BT, que derruba o Wi-Fi enquanto dura.
+bool httpBusyRecently() {
+  const uint64_t last = g_lastHttpStaticMs.load();
+  if (last == 0) return false;
+  return monotonicUptimeMs() - last < ONIX_BT_HTTP_QUIET_MS;
+}
 }  // namespace
 
-void setObdScannerConfig(const BtScannerConfig& config) {
+void setObdScannerConfig(const BtScannerConfig& config, bool reconnect) {
   {
     std::lock_guard<std::mutex> lock(g_scannerConfigMutex);
     g_scannerConfig = config;
     g_scannerConfigGeneration.fetch_add(1);
   }
-  requestObdReconnect();  // aplica já: reconecta com a nova configuração e retoma a busca parada
+  if (reconnect) {
+    requestObdReconnect();  // aplica já: reconecta com a nova configuração e retoma a busca parada
+  }
 }
+
+void noteHttpStaticActivity() { g_lastHttpStaticMs.store(monotonicUptimeMs()); }
 
 BtScannerConfig obdScannerConfig() {
   uint32_t generation = 0;
@@ -455,6 +467,10 @@ void runObdTask(SnapshotStore& store) {
     }
     if (g_obdScanRequested.exchange(false)) {
       transport.scanDevices();  // ~5 s de busca; só desconectado (senão busy)
+      continue;
+    }
+    if (session.phase() == ObdPhase::Disconnected && httpBusyRecently()) {
+      vTaskDelay(pdMS_TO_TICKS(500));  // conexão adiada até o painel terminar de carregar
       continue;
     }
     const uint32_t wait = session.step();  // no máximo uma operação bloqueante
