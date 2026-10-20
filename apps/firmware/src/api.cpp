@@ -88,8 +88,16 @@ ApiRouter::ApiRouter(const SnapshotStore& s,const TimingConfig& t,const char* ht
 std::string ApiRouter::buildLogsJson()const {
  const auto now=uptime_ ? uptime_(uptimeContext_) : monotonicUptimeMs();
  // Sem buffer injetado, a rota responde com lista vazia (os testes e builds sem log usam isso).
- if(!logs_) return serializeLogsJson(std::vector<LogEntry>(),0,now);
- return serializeLogsJson(logs_->snapshot(),logs_->droppedCount(),now);
+ const std::vector<LogEntry> ram=logs_ ? logs_->snapshot() : std::vector<LogEntry>();
+ const uint32_t droppedRam=logs_ ? logs_->droppedCount() : 0;
+ // Sem histórico injetado (ADR-0018), o envelope cai no formato do buffer em RAM.
+ if(!logHistory_) return serializeLogsJson(ram,droppedRam,now);
+ const uint32_t droppedLack=logFileStore_ ? logFileStore_->droppedCount() : 0;
+ return serializeLogHistoryJson(ram,droppedRam,logHistory_->history(),droppedLack,
+                                logHistory_->persistedBytes(),now);
+}
+std::string ApiRouter::buildLogsDownload()const {
+ return logHistory_ ? logHistory_->dump() : std::string();
 }
 std::string ApiRouter::buildDataJson()const {
  const auto copy=store_.copy();
@@ -147,6 +155,14 @@ HttpResponse ApiRouter::handle(const HttpRequest& req)const {
   return {202,ONIX_CONTENT_TYPE_JSON,{{ONIX_HEADER_CACHE_CONTROL,ONIX_CACHE_CONTROL_NO_STORE}},"{\"ok\":true}"};
  }
  if(btConfig_ && (req.path==API_ROUTE_OBD_CONFIG || req.path==API_ROUTE_OBD_SCAN))return handleBtConfig(req,*btConfig_);
+ // /api/logs/download (ADR-0018): só existe com histórico injetado; sem ele é rota desconhecida.
+ if(req.path==API_ROUTE_LOGS_DOWNLOAD && logHistory_){
+  if(req.method!=HttpMethod::Get)return {405,ONIX_CONTENT_TYPE_TEXT,{{"Allow","GET"}},"Method not allowed"};
+  return {200,ONIX_CONTENT_TYPE_TEXT,
+          {{"Content-Disposition","attachment; filename=\"onix-logs.txt\""},
+           {ONIX_HEADER_CACHE_CONTROL,ONIX_CACHE_CONTROL_NO_STORE}},
+          buildLogsDownload()};
+ }
  // /api/wifi só existe quando há WifiConfigPort injetado; sem ele é rota desconhecida (404).
  const bool wifiRoute=wifi_ && req.path==API_ROUTE_WIFI;
  if(req.path!="/" && req.path!="/api/data" && req.path!="/api/logs" && !wifiRoute)return {404,ONIX_CONTENT_TYPE_TEXT,{},"Not found"};

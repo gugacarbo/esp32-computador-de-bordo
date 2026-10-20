@@ -89,6 +89,17 @@ constexpr std::size_t ONIX_LOG_TAG_MAX = 8;
 constexpr uint8_t ONIX_LOG_MIN_LEVEL = 2;
 constexpr uint32_t ONIX_METRICS_INTERVAL_MS = 30000;  // heap/stack/uptime no log
 
+// Histórico persistido no LittleFS (ADR-0018, SPEC-0004): só warn+ e o resumo de boot vão para o
+// arquivo, então o volume é mínimo e o desgaste de flash fica viável. Cota fixa de 4 x 12 KB =
+// 48 KB (~9% dos 512 KB do LittleFS, que ainda hospeda o bundle do painel). O flush do loop()
+// grava o lote em blocos, nunca no caminho quente do log (ADR-0004/0011).
+constexpr std::size_t ONIX_LOG_FILE_SEGMENT_BYTES = 12 * 1024;  // teto-alvo por segmento
+constexpr std::size_t ONIX_LOG_FILE_SEGMENTS = 4;               // cota total (48 KB)
+constexpr std::size_t ONIX_LOG_FILE_BATCH = 16;                 // linhas pendentes em RAM
+constexpr uint32_t ONIX_LOG_FILE_FLUSH_MS = 60000;              // período do flush (loop())
+constexpr std::size_t ONIX_LOG_FILE_MIN_FREE_BYTES = 64 * 1024; // piso de espaço livre no FS
+constexpr char ONIX_LOG_FILE_PATH_PREFIX[] = "/logs.";
+
 // Cabeçalhos do contrato HTTP (SPEC-0002 §Rede e recursos).
 constexpr char ONIX_CONTENT_TYPE_HTML[] = "text/html; charset=utf-8";
 constexpr char ONIX_CONTENT_TYPE_JSON[] = "application/json";

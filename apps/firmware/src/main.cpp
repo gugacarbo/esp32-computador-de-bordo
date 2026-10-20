@@ -20,10 +20,14 @@
 #include <WebSocketsServer.h>
 #include <WiFi.h>
 
+#include <array>
+#include <cstdio>
 #include <cstring>
+#include <ctime>
 #include <set>
 #include <string>
 #include <optional>
+#include <vector>
 
 #include "esp_system.h"
 #include "lwip/etharp.h"
@@ -34,6 +38,7 @@
 #include "config.h"
 #include "dashboard.h"
 #include "log.h"
+#include "log_file.h"
 #include "obd.h"
 #include "snapshot.h"
 #include "static_asset_policy.h"
@@ -378,6 +383,7 @@ void setupOta() {
     onix::setObdPaused(true);
     if (filesystem) {
       LittleFS.end();
+      g_littleFsMounted = false;  // flushLogFile() para de tocar o FS desmontado
     }
     ONIX_LOGW("ota", "iniciada (%s)", filesystem ? "LittleFS" : "firmware");
   });
@@ -390,7 +396,179 @@ void setupOta() {
   ONIX_LOGI("ota", "porta %u", static_cast<unsigned>(onix::ONIX_OTA_PORT));
 }
 
-// Sink do log no Serial (ADR-0011): toda linha também fica no buffer lido por GET /api/logs.
+// Histórico persistido no LittleFS (ADR-0018, SPEC-0004). O logf() oferece a linha ao lote em RAM
+// (LogFileStore); a gravação acontece só no flush do loop(), nunca no caminho quente. Implementação
+// da porta: File/LittleFS fica aqui, o core testável em log_file.cpp.
+bool g_littleFsMounted = false;
+
+class LittleFsLogSink : public onix::LogFileSinkPort {
+ public:
+  bool ready() const override {
+    if (!g_littleFsMounted) {
+      return false;
+    }
+    // Piso de espaço: com o painel ocupando o FS, persistir sem folga arrisca quebrar o bundle.
+    // Sem folga a persistência para (o lote fica pendente) em vez de encher o disco.
+    const std::size_t used = LittleFS.usedBytes();
+    const std::size_t total = LittleFS.totalBytes();
+    return total > used && (total - used) > onix::ONIX_LOG_FILE_MIN_FREE_BYTES;
+  }
+
+  std::size_t size(std::size_t index) const override {
+    if (!g_littleFsMounted) {
+      return 0;
+    }
+    File file = LittleFS.open(onix::logFilePath(index).c_str(), "r");
+    if (!file) {
+      return 0;
+    }
+    const std::size_t bytes = file.size();
+    file.close();
+    return bytes;
+  }
+
+  bool append(std::size_t index, const std::string& line) override {
+    if (!g_littleFsMounted) {
+      return false;
+    }
+    File file = LittleFS.open(onix::logFilePath(index).c_str(), "a");
+    if (!file) {
+      return false;
+    }
+    // Abre/escreve/fecha por flush: todo byte já saiu para a flash quando isto retorna — é o que
+    // faz o histórico sobreviver a corte de energia (o File nunca fica aberto entre flushes).
+    const std::size_t written = file.print(line.c_str());
+    file.close();
+    return written == line.size();
+  }
+
+  bool moveTo(std::size_t from, std::size_t index) override {
+    if (!g_littleFsMounted) {
+      return false;
+    }
+    remove(index);
+    return LittleFS.rename(onix::logFilePath(from).c_str(), onix::logFilePath(index).c_str());
+  }
+
+  bool remove(std::size_t index) override {
+    if (!g_littleFsMounted) {
+      return false;
+    }
+    return LittleFS.remove(onix::logFilePath(index).c_str());
+  }
+};
+
+LittleFsLogSink g_logFileSink;
+uint32_t g_lastLogFlushMs = 0;
+
+// Leitura do histórico para as rotas HTTP (ADR-0018): lê os segmentos do LittleFS e concatena na
+// ordem do mais antigo para o mais novo (N-1 -> 0). Sem I/O no caminho do log; só nestas rotas.
+class LittleFsLogHistory : public onix::LogHistoryPort {
+ public:
+  std::vector<onix::LogEntry> history() const override {
+    const std::string text = dump();
+    std::vector<std::string> lines;
+    std::size_t start = 0;
+    while (start < text.size()) {
+      const std::size_t end = text.find('\n', start);
+      if (end == std::string::npos) {
+        lines.push_back(text.substr(start));
+        break;
+      }
+      lines.push_back(text.substr(start, end - start));
+      start = end + 1;
+    }
+    return onix::parseLogFileLines(lines);
+  }
+
+  std::string dump() const override {
+    if (!g_littleFsMounted) {
+      return {};
+    }
+    std::string out;
+    for (std::size_t i = onix::ONIX_LOG_FILE_SEGMENTS; i-- > 0;) {
+      File file = LittleFS.open(onix::logFilePath(i).c_str(), "r");
+      if (!file) {
+        continue;
+      }
+      while (file.available()) {
+        out += static_cast<char>(file.read());
+      }
+      file.close();
+    }
+    return out;
+  }
+
+  std::size_t persistedBytes() const override {
+    if (!g_littleFsMounted) {
+      return 0;
+    }
+    std::size_t total = 0;
+    for (std::size_t i = 0; i < onix::ONIX_LOG_FILE_SEGMENTS; ++i) {
+      total += g_logFileSink.size(i);
+    }
+    return total;
+  }
+};
+
+LittleFsLogHistory g_logHistory;
+
+// Flush do lote (warn+) para o LittleFS, com throttle por millis() no loop(); NUNCA do logf().
+// takePending esvazia o lote; se a gravação falhar, as linhas voltam a ficar pendentes.
+void flushLogFile() {
+  const uint32_t now = millis();
+  if (now - g_lastLogFlushMs < onix::ONIX_LOG_FILE_FLUSH_MS) {
+    return;
+  }
+  g_lastLogFlushMs = now;
+
+  onix::LogFileStore& store = onix::globalLogFileStore();
+  if (store.pending() == 0) {
+    return;  // nada novo: não toca a flash (a maioria dos ciclos grava 0 bytes)
+  }
+  if (!g_logFileSink.ready()) {
+    return;  // lote fica pendente; a próxima passagem com FS pronto grava
+  }
+
+  // Rotaciona só quando o segmento mais novo (0) encheu: 0 -> 1 -> ... -> N-1. O mais antigo (N-1)
+  // sai sempre; `segmentsToDrop` cobre arquivos que já passaram da cota (ex.: segmentos deixados por
+  // uma configuração maior) e são removidos antes de liberar o rename.
+  std::array<std::size_t, onix::ONIX_LOG_FILE_SEGMENTS> sizes{};
+  for (std::size_t i = 0; i < onix::ONIX_LOG_FILE_SEGMENTS; ++i) {
+    sizes[i] = g_logFileSink.size(i);
+  }
+  if (sizes[0] >= onix::ONIX_LOG_FILE_SEGMENT_BYTES) {
+    const std::size_t toDrop = onix::segmentsToDrop(sizes);
+    for (std::size_t i = onix::ONIX_LOG_FILE_SEGMENTS - toDrop; i < onix::ONIX_LOG_FILE_SEGMENTS; ++i) {
+      g_logFileSink.remove(i);
+    }
+    for (std::size_t i = onix::ONIX_LOG_FILE_SEGMENTS - 1; i > 0; --i) {
+      if (sizes[i - 1] > 0) {
+        g_logFileSink.moveTo(i - 1, i);
+      }
+    }
+  }
+
+  const std::vector<std::string> batch = store.takePending();
+  std::size_t written = 0;
+  bool ok = true;
+  for (const std::string& line : batch) {
+    if (!g_logFileSink.append(0, line + "\n")) {
+      ok = false;
+      break;
+    }
+    ++written;
+  }
+  if (!ok) {
+    // Devolve o que não foi gravado (as demais ficam pendentes para a próxima passagem).
+    for (std::size_t i = written; i < batch.size(); ++i) {
+      onix::globalLogFileStore().offer(onix::LogLevel::Warn, batch[i].c_str());
+    }
+  }
+}
+
+// Sink do log no Serial (ADR-0011): toda linha também fica no buffer lido por GET /api/logs e é
+// oferecida ao histórico persistido (só warn+ entram no arquivo, ADR-0018).
 void serialLogSink(const char* line) { Serial.println(line); }
 
 const char* resetReasonName(esp_reset_reason_t reason) {
@@ -432,8 +610,16 @@ void logBootInfo() {
   const bool abnormal = reason == ESP_RST_PANIC || reason == ESP_RST_INT_WDT ||
                         reason == ESP_RST_TASK_WDT || reason == ESP_RST_WDT ||
                         reason == ESP_RST_BROWNOUT;
-  onix::logf(abnormal ? onix::LogLevel::Warn : onix::LogLevel::Info, "boot",
-             "boot #%lu, reset: %s", static_cast<unsigned long>(boots), resetReasonName(reason));
+  char summary[ONIX_LOG_MESSAGE_MAX];
+  std::snprintf(summary, sizeof summary, "boot #%lu, reset: %s",
+                static_cast<unsigned long>(boots), resetReasonName(reason));
+  // O resumo de boot entra no histórico persistido mesmo em boot normal (ADR-0018): é o marcador
+  // que separa as sessões no arquivo, preservando o rastro entre reboots. Boot anormal já é warn,
+  // então o próprio logf() o oferece ao arquivo; o normal (info) é oferecido aqui, uma única vez.
+  if (!abnormal) {
+    onix::logFileLine(onix::currentLogFileTimestampMs(), onix::LogLevel::Warn, "boot", summary);
+  }
+  onix::logf(abnormal ? onix::LogLevel::Warn : onix::LogLevel::Info, "boot", "%s", summary);
 }
 
 // Métricas a cada ONIX_METRICS_INTERVAL_MS, por millis() e sem delay (mesmo padrão do broadcast).
@@ -668,6 +854,12 @@ void setup() {
   Serial.begin(onix::ONIX_SERIAL_BAUD);
   delay(200);  // aguarda a serial subir antes dos primeiros logs
   onix::setLogSink(serialLogSink);
+  // Relógio de parede do histórico (ADR-0018): epoch em ms. Sem NTP sincronizado, time() é 0 e a
+  // linha sai com "----------------Z" — o valor de uptime continua no buffer em RAM.
+  onix::setLogFileClock([]() -> uint64_t {
+    const std::time_t now = std::time(nullptr);
+    return now > 0 ? static_cast<uint64_t>(now) * 1000ULL : 0ULL;
+  });
   logBootInfo();
 
   // Hotspot cadastrado: tenta a STA por ONIX_STA_CONNECT_TIMEOUT_MS; senão (ou sem cadastro),
@@ -682,6 +874,7 @@ void setup() {
   if (!LittleFS.begin()) {
     ONIX_LOGW("fs", "falha ao montar o LittleFS; usando fallback embarcado");
   } else {
+    g_littleFsMounted = true;
     indexStaticFiles("/");
     ONIX_LOGI("fs", "LittleFS montado (%u arquivos)", static_cast<unsigned>(g_staticFiles.size()));
   }
@@ -690,6 +883,7 @@ void setup() {
   // próprio contexto (requestObdReconnect usa um atômico, a sessão nunca é tocada daqui).
   g_apiRouter.setObdReconnectHandler([](void*) { onix::requestObdReconnect(); }, nullptr);
   g_apiRouter.setBtConfigPort(&g_btConfig);
+  g_apiRouter.setLogHistory(&g_logHistory, &onix::globalLogFileStore());
 
   // Rotas em HTTP_ANY (padrão do on(uri, fn)): o handler é chamado para QUALQUER método e o
   // ApiRouter responde 405 para não-GET; rotas desconhecidas caem em onNotFound -> 404
@@ -697,6 +891,7 @@ void setup() {
   g_server.on(onix::API_ROUTE_ROOT, handleWithApiRouter);
   g_server.on(onix::API_ROUTE_DATA, handleWithApiRouter);
   g_server.on(onix::API_ROUTE_LOGS, handleWithApiRouter);
+  g_server.on(onix::API_ROUTE_LOGS_DOWNLOAD, handleWithApiRouter);
   g_server.on(onix::API_ROUTE_WIFI, handleWithApiRouter);
   g_server.on(onix::API_ROUTE_OBD_RECONNECT, handleWithApiRouter);
   g_server.on(onix::API_ROUTE_OBD_CONFIG, handleWithApiRouter);
@@ -749,6 +944,7 @@ void loop() {
   maybeBroadcastWs();       // throttle por millis(), só com clientes; sem delay
   ArduinoOTA.handle();      // só bloqueia durante uma gravação OTA em andamento
   maybeLogMetrics();        // throttle por millis(); sem delay
+  flushLogFile();           // histórico warn+ no LittleFS (ADR-0018); throttle por millis()
   tickWifi();               // STA/AP/scan (ADR-0012); só a sonda ARP ao conectar espera
   maybeRestart();           // após POST/DELETE /api/wifi
 }

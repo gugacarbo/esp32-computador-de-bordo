@@ -11,6 +11,7 @@
 #include "bt_config.h"
 #include "config.h"
 #include "log.h"
+#include "log_file.h"
 #include "snapshot.h"
 #include "wifi_config.h"
 
@@ -44,6 +45,7 @@ struct HttpResponse {
 constexpr char API_ROUTE_ROOT[] = "/";
 constexpr char API_ROUTE_DATA[] = "/api/data";
 constexpr char API_ROUTE_LOGS[] = "/api/logs";
+constexpr char API_ROUTE_LOGS_DOWNLOAD[] = "/api/logs/download";
 constexpr char API_ROUTE_WIFI[] = "/api/wifi";
 constexpr char API_ROUTE_OBD_CONFIG[] = "/api/obd/config";
 constexpr char API_ROUTE_OBD_SCAN[] = "/api/obd/scan";
@@ -101,9 +103,18 @@ class ApiRouter {
             UptimeProvider uptime = nullptr, void* uptimeContext = nullptr,
             const LogBuffer* logs = nullptr, WifiConfigPort* wifi = nullptr);
 
+  // Injeta o histórico persistido (ADR-0018): sem porta, GET /api/logs só mostra o buffer em RAM e
+  // /api/logs/download responde 404 (nenhum arquivo para baixar).
+  void setLogHistory(const LogHistoryPort* history, const LogFileStore* store) {
+    logHistory_ = history;
+    logFileStore_ = store;
+  }
+
   // GET /           -> 200 text/html; charset=utf-8 + HTML do painel (dashboard.h)
   // GET /api/data   -> 200 application/json + Cache-Control: no-store
   // GET /api/logs   -> 200 application/json + Cache-Control: no-store (buffer de log; vazio se não houver buffer)
+  // GET /api/logs/download -> 200 text/plain + Content-Disposition: attachment (ADR-0018); só
+  //             existe com histórico injetado, senão 404
   // /api/wifi (ADR-0012; sem WifiConfigPort injetado a rota é desconhecida -> 404):
   //   GET    -> 200 JSON serializeWifiStatusJson + no-store
   //   POST   -> corpo inválido 400; credencial inválida 400; save() falhou 500; sucesso 200
@@ -135,7 +146,11 @@ class ApiRouter {
   std::string buildDataJson() const;
 
   // Corpo de GET /api/logs: copia as entradas do buffer e serializa fora do mutex do buffer.
+  // Com histórico persistido injetado, anexa `history`/`droppedLack`/`persisted` (ADR-0018).
   std::string buildLogsJson() const;
+
+  // Corpo de GET /api/logs/download (text/plain): dump cru dos segmentos, mais antigo -> mais novo.
+  std::string buildLogsDownload() const;
 
   // Injeta o handler de POST /api/obd/reconnect. Sem handler a rota responde 503.
   void setObdReconnectHandler(ActionHandler handler, void* context);
@@ -151,6 +166,8 @@ class ApiRouter {
   void* uptimeContext_;
   const LogBuffer* logs_;
   WifiConfigPort* wifi_;
+  const LogHistoryPort* logHistory_ = nullptr;
+  const LogFileStore* logFileStore_ = nullptr;
   ActionHandler obdReconnect_ = nullptr;
   void* obdReconnectContext_ = nullptr;
   BtConfigPort* btConfig_ = nullptr;
