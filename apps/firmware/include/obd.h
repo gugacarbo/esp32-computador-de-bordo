@@ -156,6 +156,9 @@ class ObdSession {
   // Retoma a busca Bluetooth: limpa a parada e as falhas, zera o backoff e tenta já no próximo
   // step(). Chamar com a sessão conectada não a perturba (só agenda a próxima tentativa).
   void requestReconnect();
+  // Desconta a última falha de conexão: a busca foi cancelada para o painel carregar, não porque o
+  // scanner sumiu. Se ela tinha completado o limite, a busca volta a valer.
+  void forgiveConnectFailure();
 
  private:
   uint64_t nowMs() const;

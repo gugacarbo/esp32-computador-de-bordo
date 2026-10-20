@@ -8,6 +8,9 @@ import:
   - "@cspell/dict-pt-br/cspell-ext.json"
 words:
   - arduinoota
+  - atencao
+  - autodocs
+  - padrao
   - btconfig
   - atualizacao
   - coredump

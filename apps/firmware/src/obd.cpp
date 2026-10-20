@@ -135,6 +135,16 @@ void ObdSession::requestReconnect() {
   publish();
 }
 
+void ObdSession::forgiveConnectFailure() {
+  if (connectFailures_ > 0) {
+    --connectFailures_;
+  }
+  if (snapshot_.btSearchStopped) {
+    snapshot_.btSearchStopped = false;
+    publish();
+  }
+}
+
 void ObdSession::adapterReady(uint64_t now) {
   if (!transport().adapterInit(runtime_.config.adapterInitTimeoutMs)) {
     // Bluetooth de pé mas adaptador sem inicializar (ex.: carro desligado): a próxima tentativa

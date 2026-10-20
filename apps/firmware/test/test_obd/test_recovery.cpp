@@ -246,6 +246,24 @@ void test_nova_sessao_sem_mapa_nao_herda_nao_suportado() {
   TEST_ASSERT_TRUE(h.transport.countPid(0x0B) > 0);
 }
 
+// Busca cancelada para o painel carregar não conta como falha: desconta e, se tinha completado o
+// limite, a busca volta a valer.
+void test_falha_perdoada_nao_conta_para_o_limite() {
+  ObdHarness h;
+  h.transport.onConnect(false, false);
+  for (uint32_t i = 0; i < ONIX_BT_MAX_CONNECT_ATTEMPTS; ++i) {
+    tentaConexaoQuandoLiberada(h);
+  }
+  TEST_ASSERT_TRUE(h.session.searchStopped());
+
+  h.session.forgiveConnectFailure();  // a última tentativa foi cancelada pelo painel
+  TEST_ASSERT_FALSE(h.session.searchStopped());
+  TEST_ASSERT_FALSE(h.session.snapshot().btSearchStopped);
+
+  tentaConexaoQuandoLiberada(h);  // uma falha real volta a completar o limite
+  TEST_ASSERT_TRUE(h.session.searchStopped());
+}
+
 // Busca parada após ONIX_BT_MAX_CONNECT_ATTEMPTS falhas seguidas de connect (painel decide retomar).
 void test_busca_para_apos_max_falhas_e_nao_tenta_mais() {
   ObdHarness h;
@@ -332,6 +350,7 @@ void runRecoverySuite() {
   RUN_TEST(test_nova_sessao_limpa_nao_suportado_e_reavalia);
   RUN_TEST(test_nova_sessao_sem_mapa_nao_herda_nao_suportado);
   RUN_TEST(test_busca_para_apos_max_falhas_e_nao_tenta_mais);
+  RUN_TEST(test_falha_perdoada_nao_conta_para_o_limite);
   RUN_TEST(test_requestReconnect_retoma_busca_na_hora);
   RUN_TEST(test_sucesso_zera_contagem_de_falhas);
 }

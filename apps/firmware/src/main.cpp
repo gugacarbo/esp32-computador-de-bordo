@@ -133,7 +133,8 @@ class NvsBtConfig : public onix::BtConfigPort {
   void load() {
     onix::BtScannerConfig config = onix::defaultBtScannerConfig();
     Preferences prefs;
-    if (prefs.begin(kObdPrefsNamespace, true)) {
+    // Leitura-escrita: em somente leitura o Preferences registra erro quando o namespace não existe.
+    if (prefs.begin(kObdPrefsNamespace, false)) {
       custom_ = prefs.isKey("custom");
       if (custom_) {
         config.name = prefs.getString("name", "").c_str();

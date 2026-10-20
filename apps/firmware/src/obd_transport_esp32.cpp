@@ -67,6 +67,10 @@ BtScannerConfig currentScannerConfig(uint32_t& generation) {
   return g_scannerConfig;
 }
 
+// Busca por nome em andamento (discoverScanner) e se o painel a cancelou para carregar sem travar.
+std::atomic<bool> g_nameDiscoveryActive{false};
+std::atomic<bool> g_nameDiscoveryCancelled{false};
+
 // Resultado da última busca pedida pelo painel (/api/obd/scan).
 std::mutex g_scanMutex;
 BtScanResult g_scanResult;
@@ -273,6 +277,13 @@ class Elm327BtTransport : public ObdTransport {
               static_cast<unsigned>(g_scanResult.devices.size()));
   }
 
+  // true uma vez depois de uma busca cancelada pelo painel (consome o aviso).
+  bool takeDeferredByHttp() {
+    const bool deferred = deferredByHttp_;
+    deferredByHttp_ = false;
+    return deferred;
+  }
+
  private:
   bool ensureStarted() {
     if (!btStarted_) {
@@ -287,7 +298,15 @@ class Elm327BtTransport : public ObdTransport {
   // Busca curta (ONIX_BT_DISCOVERY_MS) pelo nome configurado e guarda o MAC do scanner.
   // Só funciona antes de qualquer connect(nome) — por isso o transporte nunca o chama.
   bool discoverScanner(const std::string& name) {
+    g_nameDiscoveryCancelled.store(false);
+    g_nameDiscoveryActive.store(true);
     BTScanResults* results = SerialBT.discover(ONIX_BT_DISCOVERY_MS);
+    g_nameDiscoveryActive.store(false);
+    if (g_nameDiscoveryCancelled.exchange(false)) {
+      deferredByHttp_ = true;  // runObdTask desconta a falha: o scanner não foi procurado de fato
+      ONIX_LOGI("bt", "busca cancelada para o painel carregar");
+      return false;
+    }
     if (results == nullptr) {
       ONIX_LOGW("bt", "busca indisponivel");
       return false;
@@ -377,6 +396,7 @@ class Elm327BtTransport : public ObdTransport {
   uint8_t macFailures_ = 0;  // falhas seguidas ao conectar pelo MAC guardado
   uint32_t appliedGeneration_ = 0;  // geração de g_scannerConfig já aplicada
   bool pinApplied_ = false;
+  bool deferredByHttp_ = false;  // última busca por nome cancelada por noteHttpStaticActivity
   char protocol_[24] = "";
 };
 
@@ -407,7 +427,14 @@ void setObdScannerConfig(const BtScannerConfig& config, bool reconnect) {
   }
 }
 
-void noteHttpStaticActivity() { g_lastHttpStaticMs.store(monotonicUptimeMs()); }
+void noteHttpStaticActivity() {
+  g_lastHttpStaticMs.store(monotonicUptimeMs());
+  // Busca por nome já em andamento (ex.: começou no boot): cancela já, o rádio volta ao Wi-Fi. A
+  // busca pedida pelo botão "Buscar" (scanDevices) não é cancelada.
+  if (g_nameDiscoveryActive.load() && !g_nameDiscoveryCancelled.exchange(true)) {
+    esp_bt_gap_cancel_discovery();
+  }
+}
 
 BtScannerConfig obdScannerConfig() {
   uint32_t generation = 0;
@@ -457,6 +484,11 @@ void runObdTask(SnapshotStore& store) {
   ObdSession session(runtime, publisher);
 
   uint64_t nextStackLogMs = monotonicUptimeMs() + kStackLogPeriodMs;
+  // Prazo no boot: o celular costuma reabrir o painel assim que a placa volta, e a primeira busca
+  // BT disputaria o rádio com esse carregamento.
+  if (g_lastHttpStaticMs.load() == 0) {
+    g_lastHttpStaticMs.store(monotonicUptimeMs());
+  }
   for (;;) {
     if (g_obdReconnectRequested.exchange(false)) {
       session.requestReconnect();  // só a task OBD toca na sessão
@@ -474,6 +506,9 @@ void runObdTask(SnapshotStore& store) {
       continue;
     }
     const uint32_t wait = session.step();  // no máximo uma operação bloqueante
+    if (transport.takeDeferredByHttp()) {
+      session.forgiveConnectFailure();
+    }
     const TickType_t ticks = pdMS_TO_TICKS(wait);
     vTaskDelay(ticks > 0 ? ticks : 1);
 
