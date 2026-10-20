@@ -43,21 +43,6 @@ const PANEL_DOT: Record<PanelState, string> = {
 	"comm-error": "bg-status-error",
 };
 
-interface AppViewProps {
-	/** Aba ativa controlada pelo estado local do App. */
-	tab: TabId;
-	/** Envelope de telemetria da placa; null enquanto não chega nada. */
-	envelope: TelemetryEnvelope | null;
-	/** Estado do painel OBD (mesmo do chip persistente). */
-	panel: PanelState;
-	/** Transporte ativo: WebSocket ou polling. */
-	transport: Transport;
-	/** True quando o WebSocket está aberto. */
-	wsOnline: boolean;
-	/** Callback da barra de abas; opcional em render estático (SSR/stories). */
-	onTabChange?: (tab: TabId) => void;
-}
-
 /** Número do herói: leitura formatada só quando válida; senão traço. */
 function heroDisplay(
 	key: SensorKey,
@@ -187,8 +172,25 @@ function TelemetryTab({
 	);
 }
 
-/**
- * Corpo do painel por aba: header com chip de estado sempre visível,
+/** Corpo do painel por aba: header com chip de estado sempre visível,
+ * conteúdo da aba ativa e barra de abas fixa na base.
+ */
+export interface AppViewProps {
+	/** Aba ativa controlada pelo estado local do App. */
+	tab: TabId;
+	/** Envelope de telemetria da placa; null enquanto não chega nada. */
+	envelope: TelemetryEnvelope | null;
+	/** Estado do painel OBD (mesmo do chip persistente). */
+	panel: PanelState;
+	/** Transporte ativo: WebSocket ou polling. */
+	transport: Transport;
+	/** True quando o WebSocket está aberto. */
+	wsOnline: boolean;
+	/** Callback da barra de abas; opcional em render estático (SSR/stories). */
+	onTabChange?: (tab: TabId) => void;
+}
+
+/** Corpo do painel por aba: header com chip de estado sempre visível,
  * conteúdo da aba ativa e barra de abas fixa na base.
  */
 export function AppView({
@@ -224,7 +226,7 @@ export function AppView({
 				</div>
 			</header>
 
-			<main
+			<div
 				role="tabpanel"
 				id={`panel-${tab}`}
 				aria-labelledby={`tab-${tab}`}
@@ -252,7 +254,7 @@ export function AppView({
 						<DiagnosticsPanel />
 					</div>
 				)}
-			</main>
+			</div>
 
 			<div className="sticky bottom-0 z-10 mt-2">
 				<TabBar value={tab} onChange={onTabChange} />

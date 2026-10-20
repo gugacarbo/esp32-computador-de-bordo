@@ -1,29 +1,48 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
+import type { StatusTone } from "../../lib/envelope";
 import { Stat } from "./stat";
 
 const meta = {
 	title: "UI/Stat",
 	component: Stat,
 	tags: ["autodocs"],
-	args: { label: "Rotação", value: 2450, unit: "rpm" },
+	args: {
+		label: "Rotação",
+		value: 2450,
+		unit: "rpm",
+		tone: "ok",
+		size: "lg",
+		bare: false,
+		valueId: undefined,
+	},
 	argTypes: {
-		value: { control: "text" },
-		unit: { control: "text" },
-		tone: { control: "select", options: ["ok", "warn", "error", "muted"] },
-		label: {
+		value: {
 			control: "text",
-			description: "Rótulo opcional exibido acima do valor.",
+			description: "Valor principal; use '—' quando não houver leitura.",
 		},
-		valueId: {
+		unit: {
 			control: "text",
-			description:
-				"Id aplicado apenas ao elemento que contém o valor (sem a unidade).",
+			description: "Unidade exibida ao lado do valor.",
+		},
+		tone: {
+			control: "select",
+			options: ["ok", "warn", "error", "muted"],
+			description: "Cor semântica do valor.",
 		},
 		size: {
 			control: "inline-radio",
 			options: ["md", "lg", "xl"],
 			description:
-				"Tamanho do valor: `xl` (herói de relance, text-6xl), `lg` (padrão, text-4xl) ou `md` (text-3xl).",
+				"`xl` herói de relance (text-6xl), `lg` padrão (text-4xl) ou `md` (text-3xl).",
+		},
+		label: {
+			control: "text",
+			description: "Rótulo exibido acima do valor.",
+		},
+		valueId: {
+			control: "text",
+			description:
+				"Id aplicado apenas ao elemento que contém o valor (sem a unidade).",
 		},
 		bare: {
 			control: "boolean",
@@ -37,28 +56,51 @@ export default meta;
 type Story = StoryObj<typeof meta>;
 
 export const Padrao: Story = {};
-export const Ok: Story = { args: { tone: "ok" } };
-export const Alerta: Story = {
-	args: { label: "Tensão", value: "11.2", unit: "V", tone: "warn" },
-};
-export const SemLeitura: Story = {
-	args: { label: "Temperatura", value: "—", unit: "°C", tone: "muted" },
-};
-export const Compacto: Story = {
-	args: { size: "md", bare: true },
-};
-export const ExtraGrande: Story = {
+
+export const HeroVelocidade: Story = {
 	args: {
 		label: "Velocidade",
 		value: 87,
 		unit: "km/h",
 		size: "xl",
+		tone: "ok",
 		bare: true,
 	},
 };
-export const SemRotulo: Story = {
-	args: { label: undefined, value: 2450, unit: "rpm" },
+
+export const SemLeitura: Story = {
+	args: {
+		label: "Temperatura",
+		value: "—",
+		unit: "°C",
+		tone: "muted",
+	},
 };
+
+export const Alerta: Story = {
+	args: {
+		label: "Tensão",
+		value: 11.2,
+		unit: "V",
+		tone: "warn",
+	},
+};
+
 export const Falha: Story = {
-	args: { label: "MAP", value: "—", unit: "kPa", tone: "error" },
+	args: {
+		label: "MAP",
+		value: "—",
+		unit: "kPa",
+		tone: "error",
+	},
+};
+
+export const Compacto: Story = {
+	args: {
+		label: "RPM",
+		value: 2450,
+		unit: "rpm",
+		size: "md",
+		bare: true,
+	},
 };
