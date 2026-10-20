@@ -7,6 +7,8 @@ const preview: Preview = {
 		backgrounds: {
 			options: { painel: { name: "painel", value: "#020617" } },
 		},
+		// Violações de acessibilidade (axe) falham os testes das stories.
+		a11y: { test: "error" },
 	},
 	initialGlobals: { backgrounds: { value: "painel" } },
 };

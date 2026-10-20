@@ -192,6 +192,18 @@
     "implemented-by": []
   },
   {
+    "id": "ADR-0016",
+    "path": "docs/adr/0016-adota-cobertura-de-design-em-camadas-com-hooks-e-ci.md",
+    "layer": "adr",
+    "title": "Adota cobertura de design em camadas com hooks e CI",
+    "status": "accepted",
+    "builds-on": [
+      "ADR-0015"
+    ],
+    "superseded-by": null,
+    "implemented-by": []
+  },
+  {
     "id": "SPEC-0001",
     "path": "docs/specs/0001-coleta-sensores-obd-e-recupera-a-conexao.md",
     "layer": "specs",

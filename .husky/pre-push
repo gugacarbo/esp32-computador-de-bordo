@@ -1,0 +1,4 @@
+# Checks rápidos de design e tipos/testes antes de publicar (sem navegador).
+bun run design:check
+bun run typecheck
+bun run test

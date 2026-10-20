@@ -23,7 +23,11 @@ const testPaths = new Set<string>();
 for (const stagedPath of stagedPaths) {
 	// Fixtures/specs Playwright do firmware: validados via `firmware:test:web`,
 	// nunca via `bun test` (o runner Bun quebra ao importar `@playwright/test`).
-	if (stagedPath.includes("apps/firmware/web-tests/")) {
+	// Idem para a regressão visual do Storybook (`design:visual`).
+	if (
+		stagedPath.includes("apps/firmware/web-tests/") ||
+		stagedPath.includes("apps/storybook/visual/")
+	) {
 		continue;
 	}
 	if (/\.(test|spec)\.[cm]?[jt]sx?$/.test(stagedPath)) {

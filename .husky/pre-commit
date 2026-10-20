@@ -2,3 +2,4 @@
 gitleaks git --pre-commit --staged --redact --verbose
 bunx lint-staged
 bun run docs:check
+bun run design:check

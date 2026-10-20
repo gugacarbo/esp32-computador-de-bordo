@@ -4,7 +4,11 @@ const config: StorybookConfig = {
 	// As stories ficam ao lado dos componentes do painel web.
 	stories: ["../../web/src/**/*.stories.@(ts|tsx)"],
 	framework: "@storybook/react-vite",
-	addons: ["@storybook/addon-mcp"],
+	addons: [
+		"@storybook/addon-mcp",
+		"@storybook/addon-a11y",
+		"@storybook/addon-vitest",
+	],
 	features: { componentsManifest: true },
 	async viteFinal(viteConfig) {
 		const { default: tailwindcss } = await import("@tailwindcss/vite");

@@ -33,6 +33,10 @@
 		"spell:fix": "bun run spell",
 		"architecture:check": "bun scripts/architecture-check.ts",
 		"docs:check": "scripts/docs-check",
+		"design:check": "bun scripts/design-check.ts",
+		"design:test": "bun run --filter '@esp32-computador-de-bordo/storybook' test:stories",
+		"design:visual": "playwright test -c playwright.storybook.config.ts",
+		"design:check:full": "bun run design:check && bun run design:test && bun run design:visual",
 		"knip": "knip",
 		"knip:report": "knip --no-exit-code",
 		"prepare": "husky"

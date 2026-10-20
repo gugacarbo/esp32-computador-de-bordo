@@ -19,3 +19,4 @@
 | [ADR-0013](0013-isola-obd-no-nucleo-0-e-para-a-busca-bluetooth-apos-falhas.md) | Isola OBD no núcleo 0 e para a busca Bluetooth após falhas | accepted |
 | [ADR-0014](0014-configura-o-scanner-bluetooth-pelo-painel-sem-senha-do-ota.md) | Configura o scanner Bluetooth pelo painel sem senha do OTA | accepted |
 | [ADR-0015](0015-define-tokens-de-design-e-tema-escuro-do-painel.md) | Define tokens de design e tema escuro do painel | accepted |
+| [ADR-0016](0016-adota-cobertura-de-design-em-camadas-com-hooks-e-ci.md) | Adota cobertura de design em camadas com hooks e CI | accepted |

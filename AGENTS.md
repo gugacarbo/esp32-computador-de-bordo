@@ -52,6 +52,8 @@ bun run spell
 bun run architecture:check
 bun run knip
 bun run docs:check
+bun run design:check
+# bun run design:check:full  # completo (Storybook + visual); roda no CI
 bun run typecheck
 bun run test
 bun run build
@@ -81,6 +83,9 @@ Somente validação local sem placa: `bun scripts/web-deploy.mjs --build-only`.
 - `spell:fix` não altera arquivos: CSpell reporta palavras para revisão manual.
 - `bun run build`, `typecheck` e `test` delegam aos workspaces com filtros Bun; cada novo workspace deve declarar esses scripts.
 - Para checar a arquitetura, rode `bun run architecture:check`; o checker percorre fontes TypeScript/TSX em `apps` e `packages`.
+- Design em camadas: `design:check` (básico, sem navegador: cores cruas, cobertura de stories, componentes base); `design:test` (Vitest em Chromium, a11y, cobertura) e `design:visual` (Playwright) rodam só no CI.
+- Snapshots de `apps/storybook/visual/__snapshots__` devem ser revisados no PR; atualize com `bun run design:visual -- --update-snapshots`.
+- Os hooks pre-commit e pre-push só rodam a verificação básica de design, sem navegador.
 
 ## Mapa do repositório
 

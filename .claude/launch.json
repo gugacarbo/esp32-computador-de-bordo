@@ -1,0 +1,22 @@
+{
+	"version": "0.0.1",
+	"configurations": [
+		{
+			"name": "storybook",
+			"runtimeExecutable": "bun",
+			"runtimeArgs": [
+				"run",
+				"--filter",
+				"@esp32-computador-de-bordo/storybook",
+				"dev"
+			],
+			"port": 6606
+		},
+		{
+			"name": "web",
+			"runtimeExecutable": "bun",
+			"runtimeArgs": ["run", "dev"],
+			"port": 5173
+		}
+	]
+}
