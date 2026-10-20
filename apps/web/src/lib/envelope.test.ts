@@ -105,7 +105,7 @@ describe("parseEnvelopeText", () => {
 
 	test("btSearchStopped ausente (firmware antigo) vale false", () => {
 		const legacy = JSON.parse(envelopeJson());
-		delete legacy["btSearchStopped"];
+		delete legacy.btSearchStopped;
 		expect(asEnvelope(legacy)?.btSearchStopped).toBe(false);
 	});
 
@@ -121,7 +121,7 @@ describe("parseEnvelopeText", () => {
 
 	test("rejeita sensor ausente ou com status inválido", () => {
 		const missing = JSON.parse(envelopeJson());
-		delete missing["rpm"];
+		delete missing.rpm;
 		expect(asEnvelope(missing)).toBeNull();
 		expect(
 			parseEnvelopeText(envelopeJson({ rpm: reading({ status: "bogus" }) })),
@@ -143,7 +143,7 @@ describe("parseEnvelopeText", () => {
 
 	test("rejeita value não-numérico e updatedAtMs inválido", () => {
 		const nanPayload = JSON.parse(envelopeJson());
-		nanPayload["rpm"]["value"] = Number.NaN;
+		nanPayload.rpm.value = Number.NaN;
 		expect(asEnvelope(nanPayload)).toBeNull();
 		expect(
 			parseEnvelopeText(envelopeJson({ rpm: reading({ value: "1000" }) })),
@@ -172,13 +172,13 @@ describe("parseEnvelopeText", () => {
 
 	test("rejeita source de tensão desconhecido", () => {
 		const bad = JSON.parse(envelopeJson());
-		bad["voltage"]["source"] = "usb";
+		bad.voltage.source = "usb";
 		expect(asEnvelope(bad)).toBeNull();
 	});
 
 	test("aceita source ecu", () => {
 		const ecu = JSON.parse(envelopeJson());
-		ecu["voltage"]["source"] = "ecu";
+		ecu.voltage.source = "ecu";
 		expect(asEnvelope(ecu)?.voltage.source).toBe("ecu");
 	});
 });

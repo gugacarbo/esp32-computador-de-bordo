@@ -107,7 +107,7 @@ function parseSensorReading(raw: unknown): SensorReading | null {
 export function asEnvelope(data: unknown): TelemetryEnvelope | null {
 	if (typeof data !== "object" || data === null) return null;
 	const record = data as Record<string, unknown>;
-	const uptimeMs = record["uptimeMs"];
+	const uptimeMs = record.uptimeMs;
 	if (typeof uptimeMs !== "number") return null;
 	for (const flag of [
 		"btConnected",
@@ -118,7 +118,7 @@ export function asEnvelope(data: unknown): TelemetryEnvelope | null {
 		if (typeof record[flag] !== "boolean") return null;
 	}
 	// Campo ausente vem de firmware antigo: tratado como busca não parada.
-	const searchStoppedRaw = record["btSearchStopped"];
+	const searchStoppedRaw = record.btSearchStopped;
 	const searchStopped =
 		searchStoppedRaw === undefined ? false : searchStoppedRaw;
 	if (typeof searchStopped !== "boolean") return null;
@@ -131,23 +131,23 @@ export function asEnvelope(data: unknown): TelemetryEnvelope | null {
 		if (reading === null) return null;
 		readings[key] = reading;
 	}
-	const voltageRaw = record["voltage"];
+	const voltageRaw = record.voltage;
 	if (typeof voltageRaw !== "object" || voltageRaw === null) return null;
-	const source = (voltageRaw as Record<string, unknown>)["source"];
+	const source = (voltageRaw as Record<string, unknown>).source;
 	if (source !== "adapter" && source !== "ecu") return null;
 	return {
 		uptimeMs,
-		btConnected: record["btConnected"] as boolean,
-		adapterReady: record["adapterReady"] as boolean,
-		ecuResponding: record["ecuResponding"] as boolean,
-		obdConnected: record["obdConnected"] as boolean,
+		btConnected: record.btConnected as boolean,
+		adapterReady: record.adapterReady as boolean,
+		ecuResponding: record.ecuResponding as boolean,
+		obdConnected: record.obdConnected as boolean,
 		btSearchStopped: searchStopped,
-		rpm: readings["rpm"],
-		speedKph: readings["speedKph"],
-		coolantC: readings["coolantC"],
-		throttlePercent: readings["throttlePercent"],
-		mapKpa: readings["mapKpa"],
-		voltage: { ...readings["voltage"], source },
+		rpm: readings.rpm,
+		speedKph: readings.speedKph,
+		coolantC: readings.coolantC,
+		throttlePercent: readings.throttlePercent,
+		mapKpa: readings.mapKpa,
+		voltage: { ...readings.voltage, source },
 	};
 }
 
