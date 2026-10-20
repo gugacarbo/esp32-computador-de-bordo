@@ -142,12 +142,12 @@
     "path": "docs/adr/0012-conecta-ao-hotspot-do-celular-com-fallback-para-o-softap.md",
     "layer": "adr",
     "title": "Conecta ao hotspot do celular com fallback para o SoftAP",
-    "status": "accepted",
+    "status": "superseded",
     "builds-on": [
       "ADR-0009",
       "ADR-0011"
     ],
-    "superseded-by": null,
+    "superseded-by": "ADR-0014",
     "implemented-by": []
   },
   {
@@ -160,6 +160,20 @@
       "ADR-0003",
       "ADR-0004",
       "ADR-0012"
+    ],
+    "superseded-by": null,
+    "implemented-by": []
+  },
+  {
+    "id": "ADR-0014",
+    "path": "docs/adr/0014-configura-o-scanner-bluetooth-pelo-painel-sem-senha-do-ota.md",
+    "layer": "adr",
+    "title": "Configura o scanner Bluetooth pelo painel sem senha do OTA",
+    "status": "accepted",
+    "builds-on": [
+      "ADR-0003",
+      "ADR-0012",
+      "ADR-0013"
     ],
     "superseded-by": null,
     "implemented-by": []
@@ -188,9 +202,9 @@
       "ADR-0004",
       "ADR-0005",
       "ADR-0011",
-      "ADR-0012",
-      "SPEC-0001",
-      "ADR-0013"
+      "ADR-0013",
+      "ADR-0014",
+      "SPEC-0001"
     ],
     "superseded-by": null,
     "implemented-by": []

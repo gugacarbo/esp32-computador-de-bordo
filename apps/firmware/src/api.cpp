@@ -100,26 +100,40 @@ namespace {
 // Respostas JSON de /api/wifi: sempre no-store, inclusive erros {"ok":false,"error":"..."}.
 HttpResponse wifiJson(int status,const std::string& body){return {status,ONIX_CONTENT_TYPE_JSON,{{ONIX_HEADER_CACHE_CONTROL,ONIX_CACHE_CONTROL_NO_STORE}},body};}
 HttpResponse wifiError(int status,const char* error){return wifiJson(status,std::string("{\"ok\":false,\"error\":\"")+error+"\"}");}
-// GET/POST/DELETE /api/wifi (ADR-0012). A senha OTA é checada antes de validar credenciais.
+// GET/POST/DELETE /api/wifi (ADR-0012). Sem senha do OTA (ADR-0014): acesso à rede basta.
 HttpResponse handleWifi(const HttpRequest& req,WifiConfigPort& wifi){
  const char restarted[]="{\"ok\":true,\"restarting\":true}";
  if(req.method==HttpMethod::Get)return wifiJson(200,serializeWifiStatusJson(wifi.status()));
  if(req.method==HttpMethod::Post){
   const auto body=parseWifiRequestBody(req.body);
   if(!body)return wifiError(400,"invalid-json");
-  if(body->otaPassword!=ONIX_OTA_PASSWORD)return wifiError(403,"forbidden");
   const WifiCredentials credentials{body->ssid,body->password};
   if(!isValidWifiCredentials(credentials))return wifiError(400,"invalid-credentials");
   if(!wifi.save(credentials))return wifiError(500,"storage");
   return wifiJson(200,restarted);
  }
  if(req.method==HttpMethod::Delete){
-  const auto body=parseWifiRequestBody(req.body);
-  if(!body)return wifiError(400,"invalid-json");
-  if(body->otaPassword!=ONIX_OTA_PASSWORD)return wifiError(403,"forbidden");
   if(!wifi.clear())return wifiError(500,"storage");
   return wifiJson(200,restarted);
  }
+ return {405,ONIX_CONTENT_TYPE_TEXT,{{"Allow","GET, POST, DELETE"}},"Method not allowed"};
+}
+// /api/obd/config e /api/obd/scan (ADR-0014): mesmas respostas JSON no-store de /api/wifi.
+HttpResponse handleBtConfig(const HttpRequest& req,BtConfigPort& bt){
+ const char ok[]="{\"ok\":true}";
+ if(req.path==API_ROUTE_OBD_SCAN){
+  if(req.method!=HttpMethod::Post)return {405,ONIX_CONTENT_TYPE_TEXT,{{"Allow","POST"}},"Method not allowed"};
+  return bt.startScan() ? wifiJson(202,ok) : wifiError(409,"busy");
+ }
+ if(req.method==HttpMethod::Get)return wifiJson(200,serializeBtConfigStatusJson(bt.status()));
+ if(req.method==HttpMethod::Post){
+  const auto config=parseBtConfigBody(req.body);
+  if(!config)return wifiError(400,"invalid-json");
+  if(!isValidBtScannerConfig(*config))return wifiError(400,"invalid-config");
+  if(!bt.save(*config))return wifiError(500,"storage");
+  return wifiJson(200,ok);
+ }
+ if(req.method==HttpMethod::Delete)return bt.clear() ? wifiJson(200,ok) : wifiError(500,"storage");
  return {405,ONIX_CONTENT_TYPE_TEXT,{{"Allow","GET, POST, DELETE"}},"Method not allowed"};
 }
 }
@@ -132,6 +146,7 @@ HttpResponse ApiRouter::handle(const HttpRequest& req)const {
   obdReconnect_(obdReconnectContext_);
   return {202,ONIX_CONTENT_TYPE_JSON,{{ONIX_HEADER_CACHE_CONTROL,ONIX_CACHE_CONTROL_NO_STORE}},"{\"ok\":true}"};
  }
+ if(btConfig_ && (req.path==API_ROUTE_OBD_CONFIG || req.path==API_ROUTE_OBD_SCAN))return handleBtConfig(req,*btConfig_);
  // /api/wifi só existe quando há WifiConfigPort injetado; sem ele é rota desconhecida (404).
  const bool wifiRoute=wifi_ && req.path==API_ROUTE_WIFI;
  if(req.path!="/" && req.path!="/api/data" && req.path!="/api/logs" && !wifiRoute)return {404,ONIX_CONTENT_TYPE_TEXT,{},"Not found"};

@@ -14,6 +14,7 @@
 #include <cstdio>
 #include <cstring>
 
+#include "bt_config.h"
 #include "config.h"
 #include "snapshot.h"
 
@@ -216,5 +217,13 @@ void setObdPaused(bool paused);
 // Pedido de reconexão vindo do painel (POST /api/obd/reconnect, outra task): a task OBD lê o
 // pedido no topo do loop e chama ObdSession::requestReconnect(). Chamável de outra task.
 void requestObdReconnect();
+
+// Configuração do scanner em uso (ADR-0014), chamáveis de outra task. setObdScannerConfig aplica
+// já: o transporte esquece o MAC achado, reaplica o PIN e a sessão reconecta.
+void setObdScannerConfig(const BtScannerConfig& config);
+BtScannerConfig obdScannerConfig();
+// Pede uma busca de dispositivos à task OBD; false se já houver uma pendente ou em andamento.
+bool requestObdScan();
+BtScanResult obdScanResult();
 
 }  // namespace onix

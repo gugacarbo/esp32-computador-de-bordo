@@ -18,8 +18,6 @@ import {
 
 const FETCH_TIMEOUT_MS = 5000;
 
-const OTA_REQUIRED =
-	"Informe a senha do OTA para salvar ou esquecer o hotspot.";
 const NETWORK_ERROR =
 	"Sem resposta da placa. Se ela estiver reiniciando, aguarde e confira o hotspot; caso contrário, tente de novo.";
 
@@ -115,7 +113,6 @@ export function WifiPanel(): ReactElement {
 
 	const [ssid, setSsid] = useState("");
 	const [password, setPassword] = useState("");
-	const [otaPassword, setOtaPassword] = useState("");
 	const [busy, setBusy] = useState(false);
 	const [feedback, setFeedback] = useState<Feedback | null>(null);
 
@@ -137,9 +134,7 @@ export function WifiPanel(): ReactElement {
 
 	async function handleSave(event: FormEvent<HTMLFormElement>): Promise<void> {
 		event.preventDefault();
-		const formError =
-			validateWifiForm({ ssid, password }) ??
-			(otaPassword.length === 0 ? OTA_REQUIRED : null);
+		const formError = validateWifiForm({ ssid, password });
 		if (formError !== null) {
 			setFeedback({ tone: "error", text: formError });
 			return;
@@ -147,14 +142,13 @@ export function WifiPanel(): ReactElement {
 		setBusy(true);
 		setFeedback(null);
 		try {
-			const result = await requestWifi("POST", { ssid, password, otaPassword });
+			const result = await requestWifi("POST", { ssid, password });
 			if (
 				result.status === 200 &&
 				parseWifiActionResponse(result.body) !== null
 			) {
 				setFeedback({ tone: "ok", text: savedMessage(ssid) });
 				setPassword("");
-				setOtaPassword("");
 			} else {
 				setFeedback({
 					tone: "error",
@@ -169,10 +163,6 @@ export function WifiPanel(): ReactElement {
 	}
 
 	async function handleForget(): Promise<void> {
-		if (otaPassword.length === 0) {
-			setFeedback({ tone: "error", text: OTA_REQUIRED });
-			return;
-		}
 		if (
 			!window.confirm(
 				"Esquecer o hotspot cadastrado? A placa vai reiniciar e usar a rede própria (Onix-MVP).",
@@ -183,7 +173,7 @@ export function WifiPanel(): ReactElement {
 		setBusy(true);
 		setFeedback(null);
 		try {
-			const result = await requestWifi("DELETE", { otaPassword });
+			const result = await requestWifi("DELETE");
 			if (
 				result.status === 200 &&
 				parseWifiActionResponse(result.body) !== null
@@ -192,7 +182,6 @@ export function WifiPanel(): ReactElement {
 					tone: "ok",
 					text: "Hotspot esquecido. A placa vai reiniciar e usar a rede própria (Onix-MVP).",
 				});
-				setOtaPassword("");
 			} else {
 				setFeedback({
 					tone: "error",
@@ -308,27 +297,6 @@ export function WifiPanel(): ReactElement {
 						/>
 						<p id="wifi-password-hint" className="m-0 text-xs text-slate-400">
 							De 8 a 63 bytes. Deixe vazia apenas se o hotspot não tiver senha.
-						</p>
-					</div>
-
-					<div className="flex flex-col gap-1">
-						<label
-							htmlFor="wifi-ota-password"
-							className="font-semibold text-slate-200"
-						>
-							Senha do OTA
-						</label>
-						<input
-							id="wifi-ota-password"
-							type="password"
-							autoComplete="current-password"
-							aria-describedby="wifi-ota-hint"
-							value={otaPassword}
-							onChange={(event) => setOtaPassword(event.target.value)}
-							className={INPUT_CLASS}
-						/>
-						<p id="wifi-ota-hint" className="m-0 text-xs text-slate-400">
-							Obrigatória para salvar ou esquecer o hotspot.
 						</p>
 					</div>
 

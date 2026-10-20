@@ -32,14 +32,12 @@ class WifiConfigPort {
   virtual bool clear() = 0;
 };
 
-// Corpo de POST /api/wifi: {"ssid":"...","password":"...","otaPassword":"..."}.
-// Corpo de DELETE /api/wifi: {"otaPassword":"..."}.
-// Objeto JSON plano só com strings (escapes \" \\ \/ \n \r \t \uXXXX aceitos); chaves
-// desconhecidas são ignoradas; chave ausente vira "". nullopt = JSON inválido.
+// Corpo de POST /api/wifi: {"ssid":"...","password":"..."} (ADR-0014: sem senha do OTA).
+// Objeto JSON plano só com strings (flat_json.h); chaves desconhecidas são ignoradas; chave
+// ausente vira "". nullopt = JSON inválido.
 struct WifiRequestBody {
   std::string ssid;
   std::string password;
-  std::string otaPassword;
 };
 std::optional<WifiRequestBody> parseWifiRequestBody(const std::string& body);
 

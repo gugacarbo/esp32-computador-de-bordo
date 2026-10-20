@@ -1,7 +1,7 @@
 ---
 status: accepted
 date: 2026-10-13
-builds-on: [ADR-0004, ADR-0005, ADR-0011, ADR-0012, SPEC-0001, ADR-0013]
+builds-on: [ADR-0004, ADR-0005, ADR-0011, ADR-0013, ADR-0014, SPEC-0001]
 implemented-by: []
 ---
 
@@ -44,26 +44,40 @@ pendente, não uma implementação no app Bun.
 - `GET /api/wifi`: HTTP 200 com `Content-Type: application/json` e `Cache-Control: no-store`; corpo
   `{"mode":"station","configured":true,"ssid":"...","ip":"..."}`, com `mode` igual a `connecting`,
   `station`, `station-lost` ou `access-point`. Nunca inclui a senha (ADR-0012).
-- `POST /api/wifi`: corpo `{"ssid":"...","password":"...","otaPassword":"..."}`. Grava a credencial
-  na NVS, agenda o reinício e responde HTTP 200 `{"ok":true,"restarting":true}`. Erros: HTTP 400 com
-  `invalid-json` ou `invalid-credentials`; HTTP 403 com `forbidden` se `otaPassword` difere de
-  `ONIX_OTA_PASSWORD`; HTTP 500 com `storage` se a NVS falhar.
-- `DELETE /api/wifi`: corpo `{"otaPassword":"..."}`. Remove a credencial, agenda o reinício e responde
-  HTTP 200 `{"ok":true,"restarting":true}`. Erros: HTTP 400 `invalid-json`, HTTP 403 `forbidden` e
-  HTTP 500 `storage`, com os mesmos efeitos de falha de `POST`.
+- `POST /api/wifi`: corpo `{"ssid":"...","password":"..."}`. Grava a credencial na NVS, agenda o
+  reinício e responde HTTP 200 `{"ok":true,"restarting":true}`. Erros: HTTP 400 com `invalid-json` ou
+  `invalid-credentials`; HTTP 500 com `storage` se a NVS falhar. Sem senha do OTA (ADR-0014): chaves
+  extras, como o antigo `otaPassword`, são ignoradas.
+- `DELETE /api/wifi`: corpo ignorado. Remove a credencial, agenda o reinício e responde HTTP 200
+  `{"ok":true,"restarting":true}`; HTTP 500 `storage` se a NVS falhar.
 - Respostas de `/api/wifi`, inclusive erros no formato `{"ok":false,"error":"..."}`, usam
   `Cache-Control: no-store`. Sem a porta de configuração injetada, a rota responde 404.
 - `POST /api/obd/reconnect`: sem corpo. Retoma a busca pelo scanner Bluetooth parada após
   `ONIX_BT_MAX_CONNECT_ATTEMPTS` falhas seguidas (ADR-0013) e responde HTTP 202 `{"ok":true}`, com
   `Cache-Control: no-store`; sem o manipulador injetado, HTTP 503 `{"ok":false}`. Outro método recebe
   HTTP 405 com `Allow: POST`. Não exige senha: só dispara uma nova tentativa de conexão.
+- `GET /api/obd/config` (ADR-0014): HTTP 200 com
+  `{"custom":false,"name":"OBDII","pin":"1234","mac":"","scan":{"state":"done","devices":[{"name":"OBDII","mac":"AA:BB:CC:DD:EE:FF","rssi":-60}]}}`.
+  `custom` indica configuração gravada pelo painel; `scan.state` é `idle`, `pending`, `scanning`,
+  `done`, `busy` (scanner conectado) ou `failed`; `rssi` é `null` sem medida.
+- `POST /api/obd/config`: corpo `{"name":"...","pin":"...","mac":"..."}`, com nome ou MAC
+  obrigatório, nome até 31 bytes, PIN até 16 e MAC `AA:BB:CC:DD:EE:FF` (normalizado). Grava na NVS e
+  aplica sem reiniciar: a sessão reconecta e retoma a busca parada. HTTP 200 `{"ok":true}`; erros
+  HTTP 400 `invalid-json` ou `invalid-config` e HTTP 500 `storage`.
+- `DELETE /api/obd/config`: volta aos padrões de `config.h`; HTTP 200 `{"ok":true}` ou 500 `storage`.
+- `POST /api/obd/scan`: pede uma busca de ~5 s pela task OBD e responde HTTP 202 `{"ok":true}`; com
+  outra busca pendente, HTTP 409 `{"ok":false,"error":"busy"}`. O resultado sai em
+  `GET /api/obd/config`. Respostas JSON de `/api/obd/*` usam `Cache-Control: no-store`; sem a porta
+  injetada, `/api/obd/config` e `/api/obd/scan` respondem 404.
 - Falta de dados, scanner ou ECU é estado do JSON, não erro HTTP do recurso disponível.
 - Caminho inexistente: HTTP 404. Método diferente de GET nas rotas conhecidas: HTTP 405, sem efeitos.
-  Em `/api/wifi`, método diferente de GET, POST ou DELETE recebe HTTP 405 com `Allow: GET, POST, DELETE`.
-- Não há autenticação de aplicação para leitura; `POST` e `DELETE` de `/api/wifi` exigem a senha do
-  OTA. Todo acesso exige conexão à rede local protegida pela senha do SoftAP ou do hotspot.
-- Não há CORS para outras origens, consulta arbitrária ou escrita no veículo; a única escrita de
-  configuração é `/api/wifi`, e `/api/obd/reconnect` só altera o estado da busca Bluetooth.
+  Em `/api/wifi` e `/api/obd/config`, método diferente de GET, POST ou DELETE recebe HTTP 405 com
+  `Allow: GET, POST, DELETE`; em `/api/obd/scan`, com `Allow: POST`.
+- Não há autenticação de aplicação (ADR-0014): todo acesso, inclusive as escritas de configuração,
+  exige só a conexão à rede local protegida pela senha do SoftAP ou do hotspot.
+- Não há CORS para outras origens, consulta arbitrária ou escrita no veículo; as escritas de
+  configuração são `/api/wifi` e `/api/obd/config`, e `/api/obd/reconnect` e `/api/obd/scan` só
+  alteram o estado do Bluetooth.
 
 ### Envelope JSON
 
@@ -186,6 +200,7 @@ em `valid`, em vez de reconstruir a política a partir de timestamps.
 | 14  | O hotspot cadastrado não está presente no boot                     | Subir o SoftAP `Onix-MVP` após 15 s e buscar o hotspot de novo a cada 20 s, sem clientes.                     |
 | 15  | Os IPs `.50`–`.59` estão todos ocupados na rede do celular         | Manter o IP obtido por DHCP e servir a API nele, sem interromper a conexão.                                   |
 | 16  | O scanner não aparece em `ONIX_BT_MAX_CONNECT_ATTEMPTS` tentativas | Parar a busca, publicar `btSearchStopped: true` e só tentar de novo após `POST /api/obd/reconnect` ou reboot. |
+| 17  | O painel grava outro scanner com a busca parada                    | Aplicar sem reiniciar: esquecer o MAC antigo, reaplicar o PIN e reconectar com a configuração nova.           |
 
 ## Questões em aberto
 

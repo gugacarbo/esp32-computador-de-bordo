@@ -19,6 +19,7 @@ formato da tabela é apontada pelo comando, nunca lida em silêncio.
 | 0011 | Registra logs do firmware em buffer circular exposto por HTTP | 2026-10-19 | em uso   |
 | 0012 | Conecta ao hotspot do celular com fallback para o SoftAP      | 2026-10-19 | em uso   |
 | 0013 | Isola OBD no núcleo 0 e para a busca Bluetooth após falhas    | 2026-10-19 | em uso   |
+| 0014 | Configura o scanner Bluetooth pelo painel sem senha do OTA    | 2026-10-19 | em uso   |
 
 ## Reservas Spec
 

@@ -1,4 +1,5 @@
 import type { ReactElement } from "react";
+import { BluetoothPanel } from "./components/BluetoothPanel";
 import { DiagnosticsPanel } from "./components/DiagnosticsPanel";
 import { ScannerReconnect } from "./components/ScannerReconnect";
 import { SensorCard } from "./components/SensorCard";
@@ -91,6 +92,7 @@ export default function App(): ReactElement {
 				</footer>
 
 				<WifiPanel />
+				<BluetoothPanel />
 				<DiagnosticsPanel />
 			</div>
 		</div>

@@ -8,6 +8,7 @@
 #include <string>
 #include <vector>
 
+#include "bt_config.h"
 #include "config.h"
 #include "log.h"
 #include "snapshot.h"
@@ -44,6 +45,8 @@ constexpr char API_ROUTE_ROOT[] = "/";
 constexpr char API_ROUTE_DATA[] = "/api/data";
 constexpr char API_ROUTE_LOGS[] = "/api/logs";
 constexpr char API_ROUTE_WIFI[] = "/api/wifi";
+constexpr char API_ROUTE_OBD_CONFIG[] = "/api/obd/config";
+constexpr char API_ROUTE_OBD_SCAN[] = "/api/obd/scan";
 constexpr char API_ROUTE_OBD_RECONNECT[] = "/api/obd/reconnect";
 
 // Base monotônica em milissegundos desde o boot (esp_timer no ESP32, steady_clock no host).
@@ -103,16 +106,22 @@ class ApiRouter {
   // GET /api/logs   -> 200 application/json + Cache-Control: no-store (buffer de log; vazio se não houver buffer)
   // /api/wifi (ADR-0012; sem WifiConfigPort injetado a rota é desconhecida -> 404):
   //   GET    -> 200 JSON serializeWifiStatusJson + no-store
-  //   POST   -> corpo inválido 400; otaPassword != ONIX_OTA_PASSWORD 403; credencial inválida
-  //             400; save() falhou 500; sucesso 200 {"ok":true,"restarting":true}
-  //   DELETE -> corpo inválido 400; otaPassword errada 403; clear() falhou 500; sucesso 200
+  //   POST   -> corpo inválido 400; credencial inválida 400; save() falhou 500; sucesso 200
   //             {"ok":true,"restarting":true}
+  //   DELETE -> corpo ignorado; clear() falhou 500; sucesso 200 {"ok":true,"restarting":true}
   //   outro  -> 405 com Allow: GET, POST, DELETE
   //   Todas as respostas JSON de /api/wifi (inclusive erros {"ok":false,"error":"..."}) levam
   //   Cache-Control: no-store.
   // /api/obd/reconnect (rota sempre conhecida):
   //   POST  -> com handler injetado: 202 application/json {"ok":true} + no-store; sem handler: 503 {"ok":false}
   //   outro -> 405 com Allow: POST
+  // /api/obd/config e /api/obd/scan (ADR-0014; sem BtConfigPort injetado são desconhecidas -> 404):
+  //   GET    /api/obd/config -> 200 JSON serializeBtConfigStatusJson + no-store
+  //   POST   /api/obd/config -> corpo inválido 400 invalid-json; config inválida 400 invalid-config;
+  //                             save() falhou 500 storage; sucesso 200 {"ok":true}
+  //   DELETE /api/obd/config -> clear() falhou 500 storage; sucesso 200 {"ok":true}
+  //   POST   /api/obd/scan   -> 202 {"ok":true}; busca já pendente 409 {"ok":false,"error":"busy"}
+  //   outro método -> 405 com Allow: GET, POST, DELETE (config) ou POST (scan); JSON sempre no-store.
   // método != GET em rota conhecida -> 405, sem ler o snapshot
   // rota desconhecida -> 404, sem ler o snapshot
   HttpResponse handle(const HttpRequest& request) const;
@@ -131,6 +140,9 @@ class ApiRouter {
   // Injeta o handler de POST /api/obd/reconnect. Sem handler a rota responde 503.
   void setObdReconnectHandler(ActionHandler handler, void* context);
 
+  // Injeta a porta de /api/obd/config e /api/obd/scan. Sem porta as rotas respondem 404.
+  void setBtConfigPort(BtConfigPort* port) { btConfig_ = port; }
+
  private:
   const SnapshotStore& store_;
   const TimingConfig& timing_;
@@ -141,6 +153,7 @@ class ApiRouter {
   WifiConfigPort* wifi_;
   ActionHandler obdReconnect_ = nullptr;
   void* obdReconnectContext_ = nullptr;
+  BtConfigPort* btConfig_ = nullptr;
 };
 
 }  // namespace onix

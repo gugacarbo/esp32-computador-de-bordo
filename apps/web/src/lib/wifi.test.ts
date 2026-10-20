@@ -137,9 +137,9 @@ describe("wifiModeLabel", () => {
 });
 
 describe("describeWifiError", () => {
-	test("403 indica senha do OTA incorreta", () => {
+	test("403 de firmware antigo cai na mensagem genérica", () => {
 		expect(describeWifiError(403, { ok: false, error: "forbidden" })).toBe(
-			"Senha do OTA incorreta",
+			"Falha na requisição (HTTP 403).",
 		);
 	});
 

@@ -109,7 +109,6 @@ export function describeWifiError(status: number, body: unknown): string {
 	if (status === 404) {
 		return "Configuração Wi-Fi indisponível neste firmware.";
 	}
-	if (status === 403) return "Senha do OTA incorreta";
 	switch (errorCodeOf(body)) {
 		case "invalid-json":
 			return "A placa não entendeu a requisição. Recarregue a página e tente de novo.";

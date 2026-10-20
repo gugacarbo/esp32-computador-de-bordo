@@ -60,6 +60,7 @@ bool g_restartPending = false;
 uint32_t g_restartRequestedMs = 0;
 
 constexpr char kWifiPrefsNamespace[] = "wifi";
+constexpr char kObdPrefsNamespace[] = "obd";
 
 void scheduleRestart() {
   g_restartPending = true;
@@ -121,6 +122,85 @@ class NvsWifiConfig : public onix::WifiConfigPort {
 };
 
 NvsWifiConfig g_wifiConfig;
+
+// Scanner Bluetooth na NVS para /api/obd/config (ADR-0014). Diferente do Wi-Fi, aplica sem
+// reiniciar: setObdScannerConfig avisa a task OBD, que reconecta com a configuração nova.
+class NvsBtConfig : public onix::BtConfigPort {
+ public:
+  void load() {
+    onix::BtScannerConfig config = onix::defaultBtScannerConfig();
+    Preferences prefs;
+    if (prefs.begin(kObdPrefsNamespace, true)) {
+      custom_ = prefs.isKey("custom");
+      if (custom_) {
+        config.name = prefs.getString("name", "").c_str();
+        config.pin = prefs.getString("pin", "").c_str();
+        config.mac = prefs.getString("mac", "").c_str();
+      }
+      prefs.end();
+    }
+    if (!onix::isValidBtScannerConfig(config)) {
+      custom_ = false;
+      config = onix::defaultBtScannerConfig();
+    }
+    onix::setObdScannerConfig(config);
+    if (custom_) {
+      ONIX_LOGI("bt", "scanner da NVS: '%s' %s", config.name.c_str(), config.mac.c_str());
+    }
+  }
+
+  onix::BtConfigStatus status() const override {
+    onix::BtConfigStatus result;
+    result.custom = custom_;
+    result.config = onix::obdScannerConfig();
+    result.scan = onix::obdScanResult();
+    return result;
+  }
+
+  bool save(const onix::BtScannerConfig& config) override {
+    Preferences prefs;
+    if (!prefs.begin(kObdPrefsNamespace, false)) {
+      return false;
+    }
+    // putString devolve 0 para string vazia: grava só os campos preenchidos e remove os demais.
+    auto put = [&prefs](const char* key, const std::string& value) {
+      if (value.empty()) return !prefs.isKey(key) || prefs.remove(key);
+      return prefs.putString(key, value.c_str()) == value.size();
+    };
+    const bool ok = put("name", config.name) && put("pin", config.pin) &&
+                    put("mac", config.mac) && prefs.putBool("custom", true) == 1;
+    prefs.end();
+    if (!ok) {
+      return false;
+    }
+    custom_ = true;
+    onix::setObdScannerConfig(config);
+    ONIX_LOGW("bt", "scanner configurado: '%s' %s", config.name.c_str(), config.mac.c_str());
+    return true;
+  }
+
+  bool clear() override {
+    Preferences prefs;
+    if (!prefs.begin(kObdPrefsNamespace, false)) {
+      return false;
+    }
+    const bool ok = prefs.clear();
+    prefs.end();
+    if (ok) {
+      custom_ = false;
+      onix::setObdScannerConfig(onix::defaultBtScannerConfig());
+      ONIX_LOGW("bt", "scanner volta aos padroes");
+    }
+    return ok;
+  }
+
+  bool startScan() override { return onix::requestObdScan(); }
+
+ private:
+  bool custom_ = false;
+};
+
+NvsBtConfig g_btConfig;
 ApiRouter g_apiRouter(g_snapshotStore, g_timing, onix::DASHBOARD_HTML, nullptr, nullptr,
                       &onix::globalLogBuffer(), &g_wifiConfig);
 WebServer g_server(onix::ONIX_HTTP_PORT);
@@ -568,6 +648,7 @@ void setup() {
   // Hotspot cadastrado: tenta a STA por ONIX_STA_CONNECT_TIMEOUT_MS; senão (ou sem cadastro),
   // SoftAP. As transições seguintes ficam em tickWifi() (ADR-0012).
   loadWifiCredentials();
+  g_btConfig.load();  // antes da task OBD: a primeira conexão já usa o scanner da NVS
   applyWifiAction(g_wifiPolicy.begin(g_hasWifiCredentials, onix::monotonicUptimeMs()));
 
   // LittleFS (frontend externo via web:stage -> data/): sem /index.html, GET / usa o
@@ -582,6 +663,7 @@ void setup() {
   // POST /api/obd/reconnect (ADR-0013): o roteador só sinaliza; a task OBD retoma a busca no
   // próprio contexto (requestObdReconnect usa um atômico, a sessão nunca é tocada daqui).
   g_apiRouter.setObdReconnectHandler([](void*) { onix::requestObdReconnect(); }, nullptr);
+  g_apiRouter.setBtConfigPort(&g_btConfig);
 
   // Rotas em HTTP_ANY (padrão do on(uri, fn)): o handler é chamado para QUALQUER método e o
   // ApiRouter responde 405 para não-GET; rotas desconhecidas caem em onNotFound -> 404
@@ -591,6 +673,8 @@ void setup() {
   g_server.on(onix::API_ROUTE_LOGS, handleWithApiRouter);
   g_server.on(onix::API_ROUTE_WIFI, handleWithApiRouter);
   g_server.on(onix::API_ROUTE_OBD_RECONNECT, handleWithApiRouter);
+  g_server.on(onix::API_ROUTE_OBD_CONFIG, handleWithApiRouter);
+  g_server.on(onix::API_ROUTE_OBD_SCAN, handleWithApiRouter);
   g_server.onNotFound(handleWithApiRouter);
   g_server.begin();
   ONIX_LOGI("http", "porta %u", static_cast<unsigned>(onix::ONIX_HTTP_PORT));

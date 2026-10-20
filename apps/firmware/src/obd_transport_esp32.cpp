@@ -21,8 +21,10 @@
 
 #include <atomic>
 #include <cstdlib>
+#include <mutex>
 #include <cstring>
 
+#include "bt_config.h"
 #include "api.h"  // monotonicUptimeMs(): mesma base de tempo da API (updatedAtMs, ageMs)
 #include "log.h"
 #include "obd.h"
@@ -53,37 +55,25 @@ constexpr uint64_t kElmDeadlineMarginMs = 200;
 // Período do log de folga da pilha da task.
 constexpr uint64_t kStackLogPeriodMs = 60000;
 
-int hexValue(char c) {
-  if (c >= '0' && c <= '9') {
-    return c - '0';
-  }
-  if (c >= 'A' && c <= 'F') {
-    return c - 'A' + 10;
-  }
-  if (c >= 'a' && c <= 'f') {
-    return c - 'a' + 10;
-  }
-  return -1;
+// Configuração do scanner em uso (ADR-0014): main.cpp grava (boot e /api/obd/config), a task OBD lê
+// a cada conexão. A geração avisa o transporte para esquecer o MAC achado e reaplicar o PIN.
+std::mutex g_scannerConfigMutex;
+BtScannerConfig g_scannerConfig = defaultBtScannerConfig();
+std::atomic<uint32_t> g_scannerConfigGeneration{0};
+
+BtScannerConfig currentScannerConfig(uint32_t& generation) {
+  std::lock_guard<std::mutex> lock(g_scannerConfigMutex);
+  generation = g_scannerConfigGeneration.load();
+  return g_scannerConfig;
 }
 
-// "AA:BB:CC:DD:EE:FF" -> 6 bytes. Qualquer outro formato é recusado.
-bool parseBtMac(const char* text, uint8_t out[6]) {
-  if (text == nullptr || std::strlen(text) != 17) {
-    return false;
-  }
-  for (std::size_t i = 0; i < 6; ++i) {
-    const char* p = text + i * 3;
-    if (i < 5 && p[2] != ':') {
-      return false;
-    }
-    const int hi = hexValue(p[0]);
-    const int lo = hexValue(p[1]);
-    if (hi < 0 || lo < 0) {
-      return false;
-    }
-    out[i] = static_cast<uint8_t>((hi << 4) | lo);
-  }
-  return true;
+// Resultado da última busca pedida pelo painel (/api/obd/scan).
+std::mutex g_scanMutex;
+BtScanResult g_scanResult;
+
+void setScanState(BtScanState state) {
+  std::lock_guard<std::mutex> lock(g_scanMutex);
+  g_scanResult.state = state;
 }
 
 // Encaminha as linhas da sessão OBD ao log do firmware (ADR-0011) até o limite configurado
@@ -142,28 +132,35 @@ class Elm327BtTransport : public ObdTransport {
     // connect(nome) não é usado: ele refaz uma busca de ~20 s a cada tentativa e, sem scanner por
     // perto, o rádio passava a maior parte do tempo buscando e o SoftAP ficava fora do ar.
     (void)timeoutMs;
-    if (!btStarted_) {
-      if (!SerialBT.begin(String(ONIX_BT_LOCAL_NAME), true)) {  // modo master
-        return false;
-      }
-      btStarted_ = true;
-      if (ONIX_BT_DEVICE_PIN[0] != '\0') {
-        SerialBT.setPin(ONIX_BT_DEVICE_PIN);
-      }
+    uint32_t generation = 0;
+    const BtScannerConfig config = currentScannerConfig(generation);
+    if (generation != appliedGeneration_) {
+      // Configuração nova (painel): o MAC achado era do scanner antigo e o PIN pode ter mudado.
+      appliedGeneration_ = generation;
+      haveScannerMac_ = false;
+      macFailures_ = 0;
+      pinApplied_ = false;
     }
+    if (!ensureStarted()) {
+      return false;
+    }
+    if (!pinApplied_ && !config.pin.empty()) {
+      SerialBT.setPin(config.pin.c_str());
+    }
+    pinApplied_ = true;
     if (SerialBT.connected(0)) {
       SerialBT.disconnect();
     }
-    if (ONIX_BT_DEVICE_MAC[0] != '\0') {
-      uint8_t mac[6] = {0, 0, 0, 0, 0, 0};
-      if (!parseBtMac(ONIX_BT_DEVICE_MAC, mac)) {
-        ONIX_LOGE("bt", "ONIX_BT_DEVICE_MAC invalido (esperado AA:BB:CC:DD:EE:FF)");
+    if (!config.mac.empty()) {
+      std::array<uint8_t, 6> mac{};
+      if (!parseBtMac(config.mac, mac)) {
+        ONIX_LOGE("bt", "MAC do scanner invalido: %s", config.mac.c_str());
         return false;
       }
-      return SerialBT.connect(mac);
+      return SerialBT.connect(mac.data());
     }
     if (!haveScannerMac_ || macFailures_ >= ONIX_BT_MAC_RETRIES) {
-      if (!discoverScanner()) {
+      if (!discoverScanner(config.name)) {
         return false;
       }
     }
@@ -240,9 +237,56 @@ class Elm327BtTransport : public ObdTransport {
   const char* protocol() const override { return protocol_; }
 
  private:
+ public:
+  // Busca pedida pelo painel (/api/obd/scan): lista nome/MAC/RSSI dos dispositivos próximos.
+  // Só a task OBD chama; com o scanner conectado a pilha recusa a busca (estado busy).
+  void scanDevices() {
+    if (isConnected()) {
+      setScanState(BtScanState::Busy);
+      return;
+    }
+    if (!ensureStarted()) {
+      setScanState(BtScanState::Failed);
+      return;
+    }
+    setScanState(BtScanState::Scanning);
+    BTScanResults* results = SerialBT.discover(ONIX_BT_DISCOVERY_MS);
+    std::vector<BtDevice> devices;
+    if (results != nullptr) {
+      for (int i = 0; i < results->getCount(); ++i) {
+        BTAdvertisedDevice* found = results->getDevice(i);
+        if (found == nullptr) continue;
+        BtDevice device;
+        device.name = found->haveName() ? found->getName() : "";
+        std::array<uint8_t, 6> mac{};
+        std::memcpy(mac.data(), *found->getAddress().getNative(), mac.size());
+        device.mac = formatBtMac(mac);
+        device.hasRssi = found->haveRSSI();
+        device.rssi = device.hasRssi ? found->getRSSI() : 0;
+        devices.push_back(device);
+      }
+    }
+    std::lock_guard<std::mutex> lock(g_scanMutex);
+    g_scanResult.devices = std::move(devices);
+    g_scanResult.state = results != nullptr ? BtScanState::Done : BtScanState::Failed;
+    ONIX_LOGI("bt", "busca do painel: %u dispositivos",
+              static_cast<unsigned>(g_scanResult.devices.size()));
+  }
+
+ private:
+  bool ensureStarted() {
+    if (!btStarted_) {
+      if (!SerialBT.begin(String(ONIX_BT_LOCAL_NAME), true)) {  // modo master
+        return false;
+      }
+      btStarted_ = true;
+    }
+    return true;
+  }
+
   // Busca curta (ONIX_BT_DISCOVERY_MS) pelo nome configurado e guarda o MAC do scanner.
   // Só funciona antes de qualquer connect(nome) — por isso o transporte nunca o chama.
-  bool discoverScanner() {
+  bool discoverScanner(const std::string& name) {
     BTScanResults* results = SerialBT.discover(ONIX_BT_DISCOVERY_MS);
     if (results == nullptr) {
       ONIX_LOGW("bt", "busca indisponivel");
@@ -250,16 +294,16 @@ class Elm327BtTransport : public ObdTransport {
     }
     for (int i = 0; i < results->getCount(); ++i) {
       BTAdvertisedDevice* device = results->getDevice(i);
-      if (device != nullptr && device->haveName() && device->getName() == ONIX_BT_DEVICE_NAME) {
+      if (device != nullptr && device->haveName() && device->getName() == name) {
         std::memcpy(scannerMac_, *device->getAddress().getNative(), sizeof(scannerMac_));
         haveScannerMac_ = true;
         macFailures_ = 0;
-        ONIX_LOGI("bt", "scanner '%s' encontrado: %s", ONIX_BT_DEVICE_NAME,
+        ONIX_LOGI("bt", "scanner '%s' encontrado: %s", name.c_str(),
                   device->getAddress().toString().c_str());
         return true;
       }
     }
-    ONIX_LOGI("bt", "scanner '%s' nao encontrado (%d dispositivos na busca)", ONIX_BT_DEVICE_NAME,
+    ONIX_LOGI("bt", "scanner '%s' nao encontrado (%d dispositivos na busca)", name.c_str(),
               results->getCount());
     return false;
   }
@@ -331,6 +375,8 @@ class Elm327BtTransport : public ObdTransport {
   uint8_t scannerMac_[6] = {0, 0, 0, 0, 0, 0};  // MAC achado pela busca (RAM; refeito no boot)
   bool haveScannerMac_ = false;
   uint8_t macFailures_ = 0;  // falhas seguidas ao conectar pelo MAC guardado
+  uint32_t appliedGeneration_ = 0;  // geração de g_scannerConfig já aplicada
+  bool pinApplied_ = false;
   char protocol_[24] = "";
 };
 
@@ -339,7 +385,38 @@ class Elm327BtTransport : public ObdTransport {
 namespace {
 std::atomic<bool> g_obdPaused{false};
 std::atomic<bool> g_obdReconnectRequested{false};
+std::atomic<bool> g_obdScanRequested{false};
 }  // namespace
+
+void setObdScannerConfig(const BtScannerConfig& config) {
+  {
+    std::lock_guard<std::mutex> lock(g_scannerConfigMutex);
+    g_scannerConfig = config;
+    g_scannerConfigGeneration.fetch_add(1);
+  }
+  requestObdReconnect();  // aplica já: reconecta com a nova configuração e retoma a busca parada
+}
+
+BtScannerConfig obdScannerConfig() {
+  uint32_t generation = 0;
+  return currentScannerConfig(generation);
+}
+
+bool requestObdScan() {
+  std::lock_guard<std::mutex> lock(g_scanMutex);
+  if (g_scanResult.state == BtScanState::Pending || g_scanResult.state == BtScanState::Scanning) {
+    return false;
+  }
+  g_scanResult.state = BtScanState::Pending;
+  g_scanResult.devices.clear();
+  g_obdScanRequested.store(true);
+  return true;
+}
+
+BtScanResult obdScanResult() {
+  std::lock_guard<std::mutex> lock(g_scanMutex);
+  return g_scanResult;
+}
 
 void setObdPaused(bool paused) {
   g_obdPaused.store(paused);
@@ -374,6 +451,10 @@ void runObdTask(SnapshotStore& store) {
     }
     if (g_obdPaused.load()) {
       vTaskDelay(pdMS_TO_TICKS(100));  // OTA em andamento: rádio livre para o Wi-Fi
+      continue;
+    }
+    if (g_obdScanRequested.exchange(false)) {
+      transport.scanDevices();  // ~5 s de busca; só desconectado (senão busy)
       continue;
     }
     const uint32_t wait = session.step();  // no máximo uma operação bloqueante

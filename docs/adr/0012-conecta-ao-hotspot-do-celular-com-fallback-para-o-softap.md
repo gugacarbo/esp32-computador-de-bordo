@@ -1,10 +1,12 @@
 ---
-status: accepted # proposed | accepted | deprecated | superseded
+status: superseded # proposed | accepted | deprecated | superseded
 date: 2026-10-19
 builds-on: [ADR-0009, ADR-0011] # ADRs relacionados: ADR-NNNN ou repo:ADR-NNNN
-superseded-by: null # escalar; preenchido no ADR antigo no commit que aceita o novo
+superseded-by: ADR-0014 # escalar; preenchido no ADR antigo no commit que aceita o novo
 deciders: ["project maintainer"]
 ---
+
+> ⚠️ VERDADE ATUAL: hotspot com fallback para o SoftAP, NVS e IP fixo permanecem; a exigência da senha do OTA em `/api/wifi` foi removida na ADR-0014.
 
 # Conecta ao hotspot do celular com fallback para o SoftAP
 

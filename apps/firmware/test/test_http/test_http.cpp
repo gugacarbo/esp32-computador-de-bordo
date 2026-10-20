@@ -11,6 +11,28 @@ using namespace onix;
 static uint64_t clockNow(void* ctx) { return *static_cast<uint64_t*>(ctx); }
 
 // Fake de WifiConfigPort: grava o que foi salvo e permite forçar falhas de NVS.
+class FakeBtPort : public BtConfigPort {
+ public:
+  BtConfigStatus status() const override { return statusValue; }
+  bool save(const BtScannerConfig& config) override {
+    ++saveCount;
+    saved = config;
+    return saveResult;
+  }
+  bool clear() override {
+    ++clearCount;
+    return clearResult;
+  }
+  bool startScan() override {
+    ++scanCount;
+    return scanResult;
+  }
+  BtConfigStatus statusValue;
+  BtScannerConfig saved;
+  int saveCount = 0, clearCount = 0, scanCount = 0;
+  bool saveResult = true, clearResult = true, scanResult = true;
+};
+
 class FakeWifiPort : public WifiConfigPort {
  public:
   WifiStatus status() const override { return statusValue; }
@@ -154,20 +176,18 @@ int main() {
          "{\"mode\":\"station\",\"configured\":true,\"ssid\":\"Casa \\\"X\\\"\",\"ip\":\"192.168.43.50\"}");
 
   // POST com sucesso grava exatamente ssid/senha e responde 200 (saveCount: 1).
-  auto saved = wifiPost(R"JSON({"ssid":"Casa","password":"senha1234","otaPassword":"onix-ota"})JSON");
+  auto saved = wifiPost(R"JSON({"ssid":"Casa","password":"senha1234"})JSON");
   assert(saved.status == 200);
   assert(saved.contentType == "application/json");
   assert(saved.headerValue("Cache-Control") == "no-store");
   assert(saved.body == restarted);
   assert(wifi.saveCount == 1 && wifi.saved.ssid == "Casa" && wifi.saved.password == "senha1234");
 
-  // Senha OTA errada: 403 e nada gravado; a checagem vem antes de validar credenciais.
-  auto forbidden = wifiPost(R"JSON({"ssid":"Outra","password":"senha1234","otaPassword":"errada"})JSON");
-  assert(forbidden.status == 403);
-  assert(forbidden.body == R"JSON({"ok":false,"error":"forbidden"})JSON");
-  assert(forbidden.headerValue("Cache-Control") == "no-store");
-  assert(wifiPost(R"JSON({"ssid":"","otaPassword":"errada"})JSON").status == 403);
-  assert(wifi.saveCount == 1);
+  // Sem senha do OTA (ADR-0014): um otaPassword antigo no corpo é ignorado e a gravação segue.
+  auto legacy = wifiPost(R"JSON({"ssid":"Casa","password":"senha1234","otaPassword":"errada"})JSON");
+  assert(legacy.status == 200);
+  assert(wifi.saveCount == 2);
+  wifi.saveCount = 1;
 
   // JSON inválido: 400 (corpo vazio e objeto truncado).
   auto badJson = wifiPost(R"JSON({"ssid":"Casa",)JSON");
@@ -177,41 +197,34 @@ int main() {
   assert(wifi.saveCount == 1);
 
   // SSID vazio e senha de 7 bytes: 400 invalid-credentials, nada gravado.
-  auto emptySsid = wifiPost(R"JSON({"ssid":"","password":"senha1234","otaPassword":"onix-ota"})JSON");
+  auto emptySsid = wifiPost(R"JSON({"ssid":"","password":"senha1234"})JSON");
   assert(emptySsid.status == 400);
   assert(emptySsid.body == R"JSON({"ok":false,"error":"invalid-credentials"})JSON");
-  assert(wifiPost(R"JSON({"ssid":"Casa","password":"1234567","otaPassword":"onix-ota"})JSON").status == 400);
+  assert(wifiPost(R"JSON({"ssid":"Casa","password":"1234567"})JSON").status == 400);
   assert(wifi.saveCount == 1);
 
   // Senha vazia (rede aberta) é válida (saveCount: 2).
-  auto open = wifiPost(R"JSON({"ssid":"Aberta","password":"","otaPassword":"onix-ota"})JSON");
+  auto open = wifiPost(R"JSON({"ssid":"Aberta","password":""})JSON");
   assert(open.status == 200);
   assert(wifi.saveCount == 2 && wifi.saved.ssid == "Aberta" && wifi.saved.password.empty());
 
   // Falha na NVS: 500 storage (saveCount: 3).
   wifi.saveResult = false;
-  auto storageFail = wifiPost(R"JSON({"ssid":"Casa","password":"senha1234","otaPassword":"onix-ota"})JSON");
+  auto storageFail = wifiPost(R"JSON({"ssid":"Casa","password":"senha1234"})JSON");
   assert(storageFail.status == 500);
   assert(storageFail.body == storageError);
   assert(storageFail.headerValue("Cache-Control") == "no-store");
   assert(wifi.saveCount == 3);
   wifi.saveResult = true;
 
-  // DELETE: sucesso chama clear(); senha errada não limpa; JSON inválido 400; falha 500.
-  auto cleared = wifiDelete(R"JSON({"otaPassword":"onix-ota"})JSON");
+  // DELETE: corpo ignorado; sucesso chama clear(); falha 500.
+  auto cleared = wifiDelete("");
   assert(cleared.status == 200);
   assert(cleared.body == restarted);
   assert(cleared.headerValue("Cache-Control") == "no-store");
   assert(wifi.clearCount == 1);
-  auto clearForbidden = wifiDelete(R"JSON({"otaPassword":"errada"})JSON");
-  assert(clearForbidden.status == 403);
-  assert(clearForbidden.body == R"JSON({"ok":false,"error":"forbidden"})JSON");
-  assert(wifi.clearCount == 1);
-  auto clearBad = wifiDelete("nao-json");
-  assert(clearBad.status == 400);
-  assert(clearBad.body == R"JSON({"ok":false,"error":"invalid-json"})JSON");
   wifi.clearResult = false;
-  auto clearFail = wifiDelete(R"JSON({"otaPassword":"onix-ota"})JSON");
+  auto clearFail = wifiDelete("nao-json");
   assert(clearFail.status == 500);
   assert(clearFail.body == storageError);
   assert(clearFail.headerValue("Cache-Control") == "no-store");
@@ -246,7 +259,7 @@ int main() {
   // Chaves desconhecidas são ignoradas, duplicadas valem a última, espaços são aceitos.
   auto lenient = parseWifiRequestBody(R"JSON( { "foo" : "bar", "ssid":"X", "otaPassword":"y", "ssid":"Z" } )JSON");
   assert(lenient.has_value());
-  assert(lenient->ssid == "Z" && lenient->otaPassword == "y" && lenient->password.empty());
+  assert(lenient->ssid == "Z" && lenient->password.empty());
   assert(parseWifiRequestBody("  {\n \"ssid\" : \"X\" }\r\n").has_value());
   assert(parseWifiRequestBody("{}").has_value());
 
@@ -278,6 +291,64 @@ int main() {
   assert(getReconnect.headerValue("Allow") == "POST");
   assert(reconnectCalls == 1);
   assert(apiRecon.handle({HttpMethod::Get, "/api/data"}).status == 200);
+
+  // /api/obd/config e /api/obd/scan (ADR-0014): 404 sem porta; com porta, contrato completo.
+  {
+    ApiRouter noBt(store, timing, "<html>ONIX</html>", clockNow, &now);
+    assert(noBt.handle({HttpMethod::Get, "/api/obd/config"}).status == 404);
+    assert(noBt.handle({HttpMethod::Post, "/api/obd/scan"}).status == 404);
+
+    FakeBtPort bt;
+    ApiRouter router(store, timing, "<html>ONIX</html>", clockNow, &now);
+    router.setBtConfigPort(&bt);
+    bt.statusValue.custom = true;
+    bt.statusValue.config = {"OBD \"II\"", "1234", "AA:BB:CC:DD:EE:FF"};
+    bt.statusValue.scan.state = BtScanState::Done;
+    bt.statusValue.scan.devices = {{"OBDII", "11:22:33:44:55:66", -60, true}, {"", "77:88:99:AA:BB:CC", 0, false}};
+    auto status = router.handle({HttpMethod::Get, "/api/obd/config"});
+    assert(status.status == 200 && status.headerValue("Cache-Control") == "no-store");
+    assert(status.body ==
+           R"JSON({"custom":true,"name":"OBD \"II\"","pin":"1234","mac":"AA:BB:CC:DD:EE:FF","scan":{"state":"done","devices":[{"name":"OBDII","mac":"11:22:33:44:55:66","rssi":-60},{"name":"","mac":"77:88:99:AA:BB:CC","rssi":null}]}})JSON");
+
+    auto post = [&router](const std::string& body) {
+      HttpRequest request{HttpMethod::Post, "/api/obd/config"};
+      request.body = body;
+      return router.handle(request);
+    };
+    // MAC normalizado em maiúsculas com ':'; sem senha nenhuma.
+    auto saved = post(R"JSON({"name":"OBDII","pin":"0000","mac":"aa-bb-cc-dd-ee-0f"})JSON");
+    assert(saved.status == 200 && saved.body == R"JSON({"ok":true})JSON");
+    assert(bt.saveCount == 1 && bt.saved.name == "OBDII" && bt.saved.pin == "0000" &&
+           bt.saved.mac == "AA:BB:CC:DD:EE:0F");
+    // Só MAC (sem nome) vale; sem nome e sem MAC, MAC malformado ou PIN longo: 400.
+    assert(post(R"JSON({"mac":"AA:BB:CC:DD:EE:FF"})JSON").status == 200);
+    auto invalid = post(R"JSON({"name":"","mac":""})JSON");
+    assert(invalid.status == 400 && invalid.body == R"JSON({"ok":false,"error":"invalid-config"})JSON");
+    assert(post(R"JSON({"name":"X","mac":"AA:BB"})JSON").status == 400);
+    assert(post(R"JSON({"name":"X","pin":"12345678901234567"})JSON").status == 400);
+    assert(post("{").status == 400);
+    assert(bt.saveCount == 2);
+    bt.saveResult = false;
+    assert(post(R"JSON({"name":"X"})JSON").status == 500);
+
+    auto cleared = router.handle({HttpMethod::Delete, "/api/obd/config"});
+    assert(cleared.status == 200 && bt.clearCount == 1);
+    auto putConfig = router.handle({HttpMethod::Put, "/api/obd/config"});
+    assert(putConfig.status == 405 && putConfig.headerValue("Allow") == "GET, POST, DELETE");
+
+    auto scan = router.handle({HttpMethod::Post, "/api/obd/scan"});
+    assert(scan.status == 202 && scan.body == R"JSON({"ok":true})JSON" && bt.scanCount == 1);
+    bt.scanResult = false;
+    auto busy = router.handle({HttpMethod::Post, "/api/obd/scan"});
+    assert(busy.status == 409 && busy.body == R"JSON({"ok":false,"error":"busy"})JSON");
+    auto getScan = router.handle({HttpMethod::Get, "/api/obd/scan"});
+    assert(getScan.status == 405 && getScan.headerValue("Allow") == "POST");
+
+    std::array<uint8_t, 6> mac{};
+    assert(parseBtMac("aa:bb:cc:dd:ee:ff", mac) && formatBtMac(mac) == "AA:BB:CC:DD:EE:FF");
+    assert(!parseBtMac("AA:BB:CC:DD:EE", mac) && !parseBtMac("AA:BB:CC:DD:EE:FG", mac));
+    assert(isValidBtScannerConfig(defaultBtScannerConfig()));
+  }
 
   std::cout << "API and snapshot behavioral tests passed\n";
 }
