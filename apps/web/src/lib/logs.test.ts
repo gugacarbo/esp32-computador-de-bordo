@@ -1,6 +1,9 @@
 import { describe, expect, test } from "bun:test";
 import {
+	formatBytes,
 	formatUptime,
+	hasHistoryTimestamp,
+	LOGS_DOWNLOAD_PATH,
 	LOGS_PATH,
 	parseLogsResponse,
 	parseLogsText,
@@ -14,6 +17,9 @@ function logsJson(overrides: Record<string, unknown> = {}): string {
 			{ uptimeMs: 120000, level: "warn", tag: "bt", message: "falha" },
 			{ uptimeMs: 121000, level: "debug", tag: "obd", message: "ok" },
 		],
+		droppedLack: 0,
+		persisted: 0,
+		history: [],
 		...overrides,
 	});
 }
@@ -31,6 +37,86 @@ describe("parseLogsText", () => {
 			tag: "bt",
 			message: "falha",
 		});
+	});
+
+	test("aceita o histórico persistido (ADR-0018)", () => {
+		const parsed = parseLogsText(
+			logsJson({
+				droppedLack: 2,
+				persisted: 512,
+				history: [
+					{ level: "error", tag: "boot", message: "reset: brownout" },
+					{ level: "warn", tag: "bt", message: "falha" },
+				],
+			}),
+		);
+		expect(parsed?.droppedLack).toBe(2);
+		expect(parsed?.persisted).toBe(512);
+		expect(parsed?.history).toHaveLength(2);
+		expect(parsed?.history[0]).toEqual({
+			level: "error",
+			tag: "boot",
+			message: "reset: brownout",
+		});
+	});
+
+	test("preserva o carimbo ts do histórico quando é string", () => {
+		const parsed = parseLogsText(
+			logsJson({
+				history: [
+					{
+						level: "warn",
+						tag: "bt",
+						message: "falha",
+						ts: "2026-10-20T18:36:00Z",
+					},
+					{
+						level: "info",
+						tag: "boot",
+						message: "ok",
+						ts: "----------------Z",
+					},
+				],
+			}),
+		);
+		expect(parsed?.history[0]?.ts).toBe("2026-10-20T18:36:00Z");
+		expect(parsed?.history[1]?.ts).toBe("----------------Z");
+	});
+
+	test("ignora ts ausente ou que não é string sem rejeitar a entrada", () => {
+		const parsed = parseLogsText(
+			logsJson({
+				history: [
+					{ level: "warn", tag: "bt", message: "a" },
+					{ level: "warn", tag: "bt", message: "b", ts: 1760985360 },
+					{ level: "warn", tag: "bt", message: "c", ts: null },
+				],
+			}),
+		);
+		expect(parsed).not.toBeNull();
+		expect(parsed?.history).toHaveLength(3);
+		expect(parsed?.history[0]).not.toHaveProperty("ts");
+		expect(parsed?.history[1]).not.toHaveProperty("ts");
+		expect(parsed?.history[2]).not.toHaveProperty("ts");
+	});
+
+	test("campos do histórico ausentes viram zero (firmware anterior)", () => {
+		const data = JSON.parse(logsJson()) as Record<string, unknown>;
+		data.droppedLack = undefined;
+		data.persisted = undefined;
+		data.history = undefined;
+		const parsed = parseLogsResponse(data);
+		expect(parsed?.droppedLack).toBe(0);
+		expect(parsed?.persisted).toBe(0);
+		expect(parsed?.history).toEqual([]);
+	});
+
+	test("rejeita histórico com nível desconhecido", () => {
+		expect(
+			parseLogsText(
+				logsJson({ history: [{ level: "fatal", tag: "t", message: "m" }] }),
+			),
+		).toBeNull();
 	});
 
 	test("aceita lista vazia", () => {
@@ -112,6 +198,39 @@ describe("formatUptime", () => {
 	});
 });
 
+describe("formatBytes", () => {
+	test("abaixo de 1 KiB usa bytes inteiros", () => {
+		expect(formatBytes(0)).toBe("0 B");
+		expect(formatBytes(512)).toBe("512 B");
+	});
+
+	test("a partir de 1 KiB usa vírgula decimal", () => {
+		expect(formatBytes(1536)).toBe("1,5 KiB");
+		expect(formatBytes(12288)).toBe("12,0 KiB");
+	});
+
+	test("valores inválidos viram zero", () => {
+		expect(formatBytes(-1)).toBe("0 B");
+		expect(formatBytes(Number.NaN)).toBe("0 B");
+	});
+});
+
+describe("hasHistoryTimestamp", () => {
+	test("aceita carimbo com dígitos", () => {
+		expect(hasHistoryTimestamp("2026-10-20T18:36:00Z")).toBe(true);
+	});
+
+	test("rejeita ausente, vazio e relógio não ajustado", () => {
+		expect(hasHistoryTimestamp(undefined)).toBe(false);
+		expect(hasHistoryTimestamp("")).toBe(false);
+		expect(hasHistoryTimestamp("----------------Z")).toBe(false);
+	});
+});
+
 test("LOGS_PATH é relativo à origem da página", () => {
 	expect(LOGS_PATH).toBe("/api/logs");
+});
+
+test("LOGS_DOWNLOAD_PATH é a rota do dump persistido", () => {
+	expect(LOGS_DOWNLOAD_PATH).toBe("/api/logs/download");
 });

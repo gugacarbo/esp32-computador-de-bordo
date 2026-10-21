@@ -9,6 +9,7 @@
 #include <vector>
 
 #include "api.h"
+#include "log_file.h"
 
 namespace onix {
 
@@ -232,6 +233,12 @@ void logf(LogLevel level, const char* tag, const char* format, ...) {
     g_sink(line);
   }
   globalLogBuffer().append(monotonicUptimeMs(), level, safeTag, message);
+  // Histórico persistido (ADR-0018): só warn+ chegam ao lote em RAM que o flush grava no arquivo.
+  // O carimbo de parede vem de currentLogFileTimestampMs(); a formatação UTC e a linha do arquivo
+  // ficam em log_file.cpp. Não faz I/O: só formata e copia para o lote.
+  if (static_cast<uint8_t>(level) <= static_cast<uint8_t>(LogLevel::Warn)) {
+    logFileLine(currentLogFileTimestampMs(), level, safeTag, message);
+  }
 }
 
 }  // namespace onix

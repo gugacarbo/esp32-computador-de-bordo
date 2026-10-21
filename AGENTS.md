@@ -86,6 +86,7 @@ Somente validação local sem placa: `bun scripts/web-deploy.mjs --build-only`.
 - Design em camadas: `design:check` (básico, sem navegador: cores cruas, cobertura de stories, componentes base); `design:test` (Vitest em Chromium, a11y, cobertura) e `design:visual` (Playwright) rodam só no CI.
 - Snapshots de `apps/storybook/visual/__snapshots__` devem ser revisados no PR; atualize com `bun run design:visual -- --update-snapshots`.
 - Os hooks pre-commit e pre-push só rodam a verificação básica de design, sem navegador.
+- Histórico de logs no LittleFS (ADR-0018): só `warn`+ e o resumo de boot vão para o arquivo, com cota fixa de 48 KB (4 segmentos de 12 KB) para não disputar com o bundle do painel (teto de 448 KB). O flush roda no `loop()` a cada 60 s; `logf()` nunca faz I/O de flash. `GET /api/logs` traz RAM + histórico e `GET /api/logs/download` baixa o dump cru.
 
 ## Mapa do repositório
 

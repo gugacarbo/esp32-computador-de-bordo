@@ -1,8 +1,12 @@
 import { type ReactElement, useEffect, useState } from "react";
 import {
+	formatBytes,
 	formatUptime,
+	hasHistoryTimestamp,
+	LOGS_DOWNLOAD_PATH,
 	LOGS_PATH,
 	type LogEntry,
+	type LogHistoryEntry,
 	type LogLevel,
 	type LogsSnapshot,
 	parseLogsText,
@@ -27,6 +31,19 @@ const LEVEL_CLASSES: Record<LogLevel, string> = {
 	debug: "border-line bg-transparent text-status-muted",
 };
 
+function LevelBadge({ level }: { level: LogLevel }): ReactElement {
+	return (
+		<span
+			className={cn(
+				"rounded border px-1 text-[10px] font-semibold leading-4",
+				LEVEL_CLASSES[level],
+			)}
+		>
+			{LEVEL_LABEL[level]}
+		</span>
+	);
+}
+
 function LogRow({ entry }: { entry: LogEntry }): ReactElement {
 	return (
 		<li className="flex min-w-0 flex-col gap-0.5 border-t border-line py-1.5 first:border-t-0">
@@ -34,14 +51,23 @@ function LogRow({ entry }: { entry: LogEntry }): ReactElement {
 				<span className="tabular-nums text-fg-muted">
 					{formatUptime(entry.uptimeMs)}
 				</span>
-				<span
-					className={cn(
-						"rounded border px-1 text-[10px] font-semibold leading-4",
-						LEVEL_CLASSES[entry.level],
-					)}
-				>
-					{LEVEL_LABEL[entry.level]}
-				</span>
+				<LevelBadge level={entry.level} />
+				<span className="min-w-0 break-words text-accent">{entry.tag}</span>
+			</div>
+			<p className="m-0 min-w-0 break-words text-fg">{entry.message}</p>
+		</li>
+	);
+}
+
+/** Linha do histórico persistido (ADR-0018): sem uptime, o carimbo vem no próprio texto. */
+function HistoryRow({ entry }: { entry: LogHistoryEntry }): ReactElement {
+	return (
+		<li className="flex min-w-0 flex-col gap-0.5 border-t border-line py-1.5">
+			<div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5">
+				{hasHistoryTimestamp(entry.ts) && (
+					<span className="tabular-nums text-fg-muted">{entry.ts}</span>
+				)}
+				<LevelBadge level={entry.level} />
 				<span className="min-w-0 break-words text-accent">{entry.tag}</span>
 			</div>
 			<p className="m-0 min-w-0 break-words text-fg">{entry.message}</p>
@@ -131,9 +157,30 @@ export function DiagnosticsPanel(): ReactElement {
 				{snapshot === null && error === null && (
 					<p className="m-0 text-fg-muted">Carregando logs…</p>
 				)}
+				{snapshot !== null && (
+					<div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+						<a
+							href={LOGS_DOWNLOAD_PATH}
+							download="onix-logs.txt"
+							className="rounded-md border border-line bg-surface-raised px-2 py-1 font-sans text-xs font-medium text-fg hover:bg-surface-raised/80"
+						>
+							Baixar histórico
+						</a>
+						<span className="text-fg-muted">
+							{snapshot.persisted > 0
+								? `${formatBytes(snapshot.persisted)} persistidos`
+								: "sem histórico persistido"}
+						</span>
+					</div>
+				)}
 				{snapshot !== null && snapshot.dropped > 0 && (
 					<p className="m-0 text-status-warn">
 						{snapshot.dropped} entradas descartadas
+					</p>
+				)}
+				{snapshot !== null && snapshot.droppedLack > 0 && (
+					<p className="m-0 text-status-warn">
+						{snapshot.droppedLack} linhas não gravadas por falta de espaço
 					</p>
 				)}
 				{snapshot !== null && entries.length === 0 && (
@@ -148,6 +195,20 @@ export function DiagnosticsPanel(): ReactElement {
 							/>
 						))}
 					</ul>
+				)}
+				{snapshot !== null && snapshot.history.length > 0 && (
+					<>
+						<p className="m-0 text-fg-muted">Histórico persistido</p>
+						<ul className="m-0 flex max-h-96 min-w-0 list-none flex-col overflow-y-auto p-0">
+							{snapshot.history.map((entry, index) => (
+								<HistoryRow
+									// biome-ignore lint/suspicious/noArrayIndexKey: histórico sem id; a ordem é estável entre polls
+									key={`${index}-${entry.level}-${entry.tag}-${entry.message}`}
+									entry={entry}
+								/>
+							))}
+						</ul>
+					</>
 				)}
 			</div>
 		</details>

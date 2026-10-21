@@ -93,6 +93,42 @@ int main() {
   auto loggedBody = apiWithLogs.handle({HttpMethod::Get, "/api/logs"}).body;
   assert(loggedBody.find("\"level\":\"warn\",\"tag\":\"bt\",\"message\":\"falha\"") !=
          std::string::npos);
+  // Histórico persistido (ADR-0018): com a porta injetada, /api/logs anexa history/droppedLack/
+  // persisted e /api/logs/download devolve o dump cru; sem a porta, o download é 404.
+  {
+    onix::LogFileStore fileStore;
+    std::vector<onix::LogEntry> historyEntries(1);
+    historyEntries[0].ts = "2026-10-20T18:36:00Z";
+    historyEntries[0].level = onix::LogLevel::Error;
+    historyEntries[0].tag = "boot";
+    historyEntries[0].message = "reset: brownout";
+    struct FakeHistory : onix::LogHistoryPort {
+      std::vector<onix::LogEntry> entries;
+      std::string text;
+      std::vector<onix::LogEntry> history() const override { return entries; }
+      std::string dump() const override { return text; }
+      std::size_t persistedBytes() const override { return text.size(); }
+    } fake;
+    fake.entries = historyEntries;
+    fake.text = "2026-10-20T18:36:00Z [error][boot] reset: brownout\n";
+    ApiRouter apiHistory(store, timing, "<html>ONIX</html>", clockNow, &now, &logs);
+    apiHistory.setLogHistory(&fake, &fileStore);
+    const auto body = apiHistory.handle({HttpMethod::Get, "/api/logs"}).body;
+    assert(body.find("\"droppedLack\":0") != std::string::npos);
+    assert(body.find("\"persisted\":" + std::to_string(fake.text.size())) != std::string::npos);
+    assert(body.find("\"history\":[{\"ts\":\"2026-10-20T18:36:00Z\",\"level\":\"error\","
+                     "\"tag\":\"boot\","
+                     "\"message\":\"reset: brownout\"}]") != std::string::npos);
+    const auto download = apiHistory.handle({HttpMethod::Get, "/api/logs/download"});
+    assert(download.status == 200);
+    assert(download.contentType == "text/plain; charset=utf-8");
+    assert(download.headerValue("Content-Disposition") ==
+           "attachment; filename=\"onix-logs.txt\"");
+    assert(download.body == fake.text);
+    assert(apiHistory.handle({HttpMethod::Post, "/api/logs/download"}).status == 405);
+    // Sem histórico, a rota de download é desconhecida (404).
+    assert(api.handle({HttpMethod::Get, "/api/logs/download"}).status == 404);
+  }
   Snapshot s;
   s.btConnected = s.adapterReady = s.hasEcuResponse = true;
   s.lastEcuResponseMs = now;
