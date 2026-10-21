@@ -2,7 +2,6 @@ import type { Meta, StoryObj } from "@storybook/react-vite";
 import type { ReactElement } from "react";
 import type { AppViewProps } from "./App";
 import { AppView } from "./App";
-import type { Transport } from "./hooks/useTelemetry";
 import type {
 	PanelState,
 	SensorKey,
@@ -90,8 +89,6 @@ function PainelDemo(args: PainelDemoArgs): ReactElement {
 			tab={args.tab ?? "telemetria"}
 			envelope={panel === "comm-error" ? null : env}
 			panel={panel}
-			transport={args.transport ?? "ws"}
-			wsOnline={args.wsOnline ?? true}
 		/>
 	);
 }
@@ -122,8 +119,6 @@ const meta = {
 	args: {
 		tab: "telemetria",
 		panel: "connected",
-		transport: "ws",
-		wsOnline: true,
 		velocidade: "87",
 		rpm: "2450",
 		coolant: "91",
@@ -151,15 +146,6 @@ const meta = {
 			] as const,
 			description: "Estado do OBD (chip persistente no cabeçalho).",
 		},
-		transport: {
-			control: "select",
-			options: ["ws", "polling"] as const,
-			description: "Transporte exibido no rodapé da telemetria.",
-		},
-		wsOnline: {
-			control: "boolean",
-			description: "WebSocket aberto (afeta badge de transporte).",
-		},
 		velocidade: { control: "text", description: "Velocidade simulada." },
 		rpm: { control: "text", description: "RPM simulado." },
 		coolant: { control: "text", description: "Temp. líquido simulada." },
@@ -182,8 +168,6 @@ export const Padrao: Story = {};
 export const SemComunicacao: Story = {
 	args: {
 		panel: "comm-error",
-		transport: "polling",
-		wsOnline: false,
 		velocidade: null,
 		rpm: null,
 		coolant: null,
@@ -198,8 +182,6 @@ export const SemComunicacao: Story = {
 export const Carregando: Story = {
 	args: {
 		panel: "loading",
-		transport: "polling",
-		wsOnline: false,
 		velocidade: null,
 		rpm: null,
 		coolant: null,
@@ -214,8 +196,6 @@ export const Carregando: Story = {
 export const OBDDesconectado: Story = {
 	args: {
 		panel: "disconnected",
-		transport: "polling",
-		wsOnline: false,
 		velocidade: null,
 		rpm: null,
 		coolant: null,
@@ -230,8 +210,6 @@ export const OBDDesconectado: Story = {
 export const AquecendoAdaptador: Story = {
 	args: {
 		panel: "adapter",
-		transport: "ws",
-		wsOnline: true,
 		velocidade: null,
 		rpm: null,
 		coolant: null,
@@ -247,8 +225,6 @@ export const Conexao: Story = {
 	args: {
 		tab: "conexao",
 		panel: "connected",
-		transport: "ws",
-		wsOnline: true,
 		velocidade: "87",
 		rpm: "2450",
 		coolant: "91",
@@ -264,8 +240,6 @@ export const Ajustes: Story = {
 	args: {
 		tab: "ajustes",
 		panel: "connected",
-		transport: "ws",
-		wsOnline: true,
 		velocidade: "87",
 		rpm: "2450",
 		coolant: "91",

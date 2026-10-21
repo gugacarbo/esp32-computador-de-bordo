@@ -15,6 +15,7 @@ import {
 	wifiModeLabel,
 } from "../lib/wifi";
 import { Alert } from "./ui/alert";
+import { Badge } from "./ui/badge";
 import { Button } from "./ui/button";
 import { Field } from "./ui/field";
 
@@ -131,6 +132,10 @@ export function WifiPanel(): ReactElement {
 	}, []);
 
 	useEffect(() => {
+		void refreshStatus();
+	}, [refreshStatus]);
+
+	useEffect(() => {
 		if (open) void refreshStatus();
 	}, [open, refreshStatus]);
 
@@ -197,14 +202,36 @@ export function WifiPanel(): ReactElement {
 		}
 	}
 
+	const triggerStatus =
+		status === null
+			? statusError === null
+				? { label: "Verificando", tone: "muted" as const }
+				: { label: "Indisponível", tone: "error" as const }
+			: status.mode === "station"
+				? { label: "Conectado", tone: "ok" as const }
+				: status.mode === "connecting"
+					? { label: "Conectando", tone: "warn" as const }
+					: status.mode === "station-lost"
+						? { label: "Reconectando", tone: "warn" as const }
+						: { label: "Ponto de acesso", tone: "muted" as const };
+
 	return (
 		<details
 			id="wifi"
-			className="rounded-lg border border-line/60 bg-surface-raised px-3 py-2 text-sm"
+			className="group rounded-lg border border-line/60 bg-surface-raised px-3 py-2 text-sm"
 			onToggle={(event) => setOpen(event.currentTarget.open)}
 		>
-			<summary className="cursor-pointer select-none font-semibold text-fg">
-				Rede Wi-Fi
+			<summary className="flex cursor-pointer items-center justify-between gap-2 font-semibold text-fg">
+				<span className="flex items-center gap-1.5">
+					<span
+						aria-hidden="true"
+						className="transition-transform group-open:rotate-90"
+					>
+						▸
+					</span>
+					Rede Wi-Fi
+				</span>
+				<Badge tone={triggerStatus.tone}>{triggerStatus.label}</Badge>
 			</summary>
 			<div className="mt-3 flex flex-col gap-4">
 				<section

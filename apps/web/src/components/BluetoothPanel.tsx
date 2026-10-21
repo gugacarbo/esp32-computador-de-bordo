@@ -22,6 +22,7 @@ import {
 } from "../lib/btconfig";
 import { cn } from "../lib/utils";
 import { Alert } from "./ui/alert";
+import { Badge } from "./ui/badge";
 import { Button } from "./ui/button";
 import { Field } from "./ui/field";
 
@@ -39,6 +40,12 @@ interface ApiResult {
 	status: number;
 	body: unknown;
 }
+
+export type BluetoothConnectionStatus =
+	| "connected"
+	| "disconnected"
+	| "unavailable"
+	| "checking";
 
 async function readJson(response: Response): Promise<unknown> {
 	try {
@@ -83,7 +90,11 @@ function deviceDetails(device: BtDevice): string {
  * próximos para escolher e grava nome, PIN e MAC na placa. Salvar aplica sem reiniciar: a placa
  * reconecta com a configuração nova e retoma a busca, se estava parada.
  */
-export function BluetoothPanel(): ReactElement {
+export function BluetoothPanel({
+	connectionStatus,
+}: {
+	connectionStatus: BluetoothConnectionStatus;
+}): ReactElement {
 	const [open, setOpen] = useState(false);
 	const [status, setStatus] = useState<BtConfigStatus | null>(null);
 	const [statusError, setStatusError] = useState<string | null>(null);
@@ -247,15 +258,30 @@ export function BluetoothPanel(): ReactElement {
 		? scanStateLabel("scanning")
 		: scanStateLabel(scanState);
 	const devices = status?.scan.devices ?? [];
+	const triggerStatus = {
+		connected: { label: "Conectado", tone: "ok" as const },
+		disconnected: { label: "Desconectado", tone: "muted" as const },
+		unavailable: { label: "Sem comunicação", tone: "error" as const },
+		checking: { label: "Verificando", tone: "muted" as const },
+	}[connectionStatus];
 
 	return (
 		<details
 			id="bluetooth"
-			className="rounded-card border border-line bg-surface-raised px-3 py-2 text-sm"
+			className="group rounded-card border border-line bg-surface-raised px-3 py-2 text-sm"
 			onToggle={(event) => setOpen(event.currentTarget.open)}
 		>
-			<summary className="cursor-pointer select-none font-semibold text-fg">
-				Scanner Bluetooth
+			<summary className="flex cursor-pointer items-center justify-between gap-2 font-semibold text-fg">
+				<span className="flex items-center gap-1.5">
+					<span
+						aria-hidden="true"
+						className="transition-transform group-open:rotate-90"
+					>
+						▸
+					</span>
+					Scanner Bluetooth
+				</span>
+				<Badge tone={triggerStatus.tone}>{triggerStatus.label}</Badge>
 			</summary>
 			<div className="mt-3 flex flex-col gap-4">
 				{statusError !== null && (

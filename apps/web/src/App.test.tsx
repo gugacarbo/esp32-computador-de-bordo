@@ -2,7 +2,6 @@ import { describe, expect, test } from "bun:test";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { AppView } from "./App";
-import type { Transport } from "./hooks/useTelemetry";
 import type {
 	PanelState,
 	SensorReading,
@@ -44,8 +43,6 @@ function renderTab(tab: TabId, envelope: TelemetryEnvelope | null): string {
 			tab,
 			envelope,
 			panel: (envelope === null ? "loading" : "connected") as PanelState,
-			transport: "ws" as Transport,
-			wsOnline: true,
 		}),
 	);
 }
@@ -87,10 +84,10 @@ describe("AppView (SSR)", () => {
 		expect(markup).toContain("—");
 	});
 
-	test("Conexão mostra o Bluetooth e o aviso de busca pausada, sem Wi-Fi nem logs", () => {
+	test("Conexão mostra Bluetooth e Wi-Fi, sem diagnóstico", () => {
 		const markup = renderTab("conexao", makeEnvelope());
 		expect(markup).toContain('id="bluetooth"');
-		expect(markup).not.toContain('id="wifi"');
+		expect(markup).toContain('id="wifi"');
 		expect(markup).not.toContain('id="diagnostics"');
 	});
 
@@ -99,9 +96,9 @@ describe("AppView (SSR)", () => {
 		expect(markup).toContain('id="panel-status"');
 	});
 
-	test("Ajustes mostra Wi-Fi e Diagnóstico, sem Bluetooth nem telemetria", () => {
+	test("Ajustes mostra Diagnóstico, sem Wi-Fi, Bluetooth nem telemetria", () => {
 		const markup = renderTab("ajustes", makeEnvelope());
-		expect(markup).toContain('id="wifi"');
+		expect(markup).not.toContain('id="wifi"');
 		expect(markup).toContain('id="diagnostics"');
 		expect(markup).not.toContain('id="bluetooth"');
 		expect(markup).not.toContain('id="value-speedKph"');

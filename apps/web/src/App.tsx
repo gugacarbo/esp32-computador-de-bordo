@@ -3,16 +3,18 @@
 // Telemetria fica na aba inicial porque o uso dominante é dirigindo:
 // números grandes legíveis de relance; config empurrada para Conexão/Ajustes.
 import { type ReactElement, useState } from "react";
-import { BluetoothPanel } from "./components/BluetoothPanel";
+import {
+	BluetoothPanel,
+	type BluetoothConnectionStatus,
+} from "./components/BluetoothPanel";
 import { DiagnosticsPanel } from "./components/DiagnosticsPanel";
 import { ScannerReconnect } from "./components/ScannerReconnect";
 import { SensorCard } from "./components/SensorCard";
-import { Badge } from "./components/ui/badge";
 import { Card } from "./components/ui/card";
 import { Stat } from "./components/ui/stat";
 import { TabBar } from "./components/ui/tab-bar";
 import { WifiPanel } from "./components/WifiPanel";
-import { type Transport, useTelemetry } from "./hooks/useTelemetry";
+import { useTelemetry } from "./hooks/useTelemetry";
 import type { TelemetryEnvelope } from "./lib/envelope";
 import {
 	formatSensorValue,
@@ -110,13 +112,9 @@ function HeroCard({
 function TelemetryTab({
 	envelope,
 	offline,
-	transport,
-	wsOnline,
 }: {
 	envelope: TelemetryEnvelope | null;
 	offline: boolean;
-	transport: Transport;
-	wsOnline: boolean;
 }): ReactElement {
 	const speed = heroDisplay("speedKph", envelope?.speedKph ?? null, offline);
 	const rpm = heroDisplay("rpm", envelope?.rpm ?? null, offline);
@@ -154,20 +152,6 @@ function TelemetryTab({
 					/>
 				))}
 			</div>
-			<footer className="flex flex-wrap items-center gap-2 px-0.5 text-xs text-fg-muted">
-				<Badge tone={wsOnline ? "ok" : "muted"}>
-					{wsOnline ? "WebSocket" : "Polling /api/data"}
-				</Badge>
-				<span>
-					{transport === "ws"
-						? "Tempo real via ws://<host>:81/ws"
-						: "Atualizando via GET /api/data"}
-				</span>
-				<span>
-					Uptime:{" "}
-					{envelope === null ? "—" : `${Math.floor(envelope.uptimeMs / 1000)}s`}
-				</span>
-			</footer>
 		</section>
 	);
 }
@@ -182,10 +166,6 @@ export interface AppViewProps {
 	envelope: TelemetryEnvelope | null;
 	/** Estado do painel OBD (mesmo do chip persistente). */
 	panel: PanelState;
-	/** Transporte ativo: WebSocket ou polling. */
-	transport: Transport;
-	/** True quando o WebSocket está aberto. */
-	wsOnline: boolean;
 	/** Callback da barra de abas; opcional em render estático (SSR/stories). */
 	onTabChange?: (tab: TabId) => void;
 }
@@ -197,32 +177,37 @@ export function AppView({
 	tab,
 	envelope,
 	panel,
-	transport,
-	wsOnline,
 	onTabChange,
 }: AppViewProps): ReactElement {
 	const offline = panel === "comm-error";
+	const bluetoothConnectionStatus: BluetoothConnectionStatus =
+		panel === "comm-error"
+			? "unavailable"
+			: envelope === null
+				? "checking"
+				: envelope.btConnected
+					? "connected"
+					: "disconnected";
 
 	return (
 		<div className="flex min-h-screen flex-col bg-surface text-fg">
 			<header className="flex flex-col gap-2 px-4 pb-2 pt-4">
-				<div className="flex min-w-0 items-baseline justify-between gap-3">
+				<div className="flex min-w-0 flex-wrap items-center justify-between gap-3">
 					<h1 className="m-0 text-lg font-bold tracking-[0.2em]">ONIX</h1>
-					<p className="m-0 truncate text-xs text-fg-muted">
-						Computador de bordo
-					</p>
-				</div>
-				<div
-					id="panel-status"
-					data-state={panel}
-					aria-live="polite"
-					className="flex max-w-fit items-center gap-2 rounded-full border border-line bg-surface-raised px-3 py-1.5 text-xs font-semibold"
-				>
-					<span
-						aria-hidden="true"
-						className={cn("size-2 shrink-0 rounded-full", PANEL_DOT[panel])}
-					/>
-					{PANEL_TEXT[panel]}
+					<div className="flex flex-wrap items-center justify-end gap-2">
+						<div
+							id="panel-status"
+							data-state={panel}
+							aria-live="polite"
+							className="flex max-w-fit items-center gap-2 rounded-full border border-line bg-surface-raised px-3 py-1.5 text-xs font-semibold"
+						>
+							<span
+								aria-hidden="true"
+								className={cn("size-2 shrink-0 rounded-full", PANEL_DOT[panel])}
+							/>
+							{PANEL_TEXT[panel]}
+						</div>
+					</div>
 				</div>
 			</header>
 
@@ -233,24 +218,19 @@ export function AppView({
 				className="mx-auto w-full max-w-3xl flex-1 px-3 pb-3"
 			>
 				{tab === "telemetria" && (
-					<TelemetryTab
-						envelope={envelope}
-						offline={offline}
-						transport={transport}
-						wsOnline={wsOnline}
-					/>
+					<TelemetryTab envelope={envelope} offline={offline} />
 				)}
 				{tab === "conexao" && (
 					<div className="flex flex-col gap-2.5">
 						<ScannerReconnect
 							searchStopped={envelope?.btSearchStopped ?? false}
 						/>
-						<BluetoothPanel />
+						<BluetoothPanel connectionStatus={bluetoothConnectionStatus} />
+						<WifiPanel />
 					</div>
 				)}
 				{tab === "ajustes" && (
 					<div className="flex flex-col gap-2.5">
-						<WifiPanel />
 						<DiagnosticsPanel />
 					</div>
 				)}
@@ -265,17 +245,10 @@ export function AppView({
 
 /** Raiz do painel: telemetria + estado persistente + abas. */
 export default function App(): ReactElement {
-	const { envelope, panel, transport, wsOnline } = useTelemetry();
+	const { envelope, panel } = useTelemetry();
 	const [tab, setTab] = useState<TabId>(DEFAULT_TAB_ID);
 
 	return (
-		<AppView
-			tab={tab}
-			envelope={envelope}
-			panel={panel}
-			transport={transport}
-			wsOnline={wsOnline}
-			onTabChange={setTab}
-		/>
+		<AppView tab={tab} envelope={envelope} panel={panel} onTabChange={setTab} />
 	);
 }
