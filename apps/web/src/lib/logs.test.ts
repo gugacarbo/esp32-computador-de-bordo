@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import {
 	formatBytes,
 	formatUptime,
+	hasHistoryTimestamp,
 	LOGS_DOWNLOAD_PATH,
 	LOGS_PATH,
 	parseLogsResponse,
@@ -57,6 +58,46 @@ describe("parseLogsText", () => {
 			tag: "boot",
 			message: "reset: brownout",
 		});
+	});
+
+	test("preserva o carimbo ts do histórico quando é string", () => {
+		const parsed = parseLogsText(
+			logsJson({
+				history: [
+					{
+						level: "warn",
+						tag: "bt",
+						message: "falha",
+						ts: "2026-10-20T18:36:00Z",
+					},
+					{
+						level: "info",
+						tag: "boot",
+						message: "ok",
+						ts: "----------------Z",
+					},
+				],
+			}),
+		);
+		expect(parsed?.history[0]?.ts).toBe("2026-10-20T18:36:00Z");
+		expect(parsed?.history[1]?.ts).toBe("----------------Z");
+	});
+
+	test("ignora ts ausente ou que não é string sem rejeitar a entrada", () => {
+		const parsed = parseLogsText(
+			logsJson({
+				history: [
+					{ level: "warn", tag: "bt", message: "a" },
+					{ level: "warn", tag: "bt", message: "b", ts: 1760985360 },
+					{ level: "warn", tag: "bt", message: "c", ts: null },
+				],
+			}),
+		);
+		expect(parsed).not.toBeNull();
+		expect(parsed?.history).toHaveLength(3);
+		expect(parsed?.history[0]).not.toHaveProperty("ts");
+		expect(parsed?.history[1]).not.toHaveProperty("ts");
+		expect(parsed?.history[2]).not.toHaveProperty("ts");
 	});
 
 	test("campos do histórico ausentes viram zero (firmware anterior)", () => {
@@ -171,6 +212,18 @@ describe("formatBytes", () => {
 	test("valores inválidos viram zero", () => {
 		expect(formatBytes(-1)).toBe("0 B");
 		expect(formatBytes(Number.NaN)).toBe("0 B");
+	});
+});
+
+describe("hasHistoryTimestamp", () => {
+	test("aceita carimbo com dígitos", () => {
+		expect(hasHistoryTimestamp("2026-10-20T18:36:00Z")).toBe(true);
+	});
+
+	test("rejeita ausente, vazio e relógio não ajustado", () => {
+		expect(hasHistoryTimestamp(undefined)).toBe(false);
+		expect(hasHistoryTimestamp("")).toBe(false);
+		expect(hasHistoryTimestamp("----------------Z")).toBe(false);
 	});
 });
 

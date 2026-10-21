@@ -17,7 +17,15 @@ namespace onix {
 
 namespace {
 
-constexpr std::size_t LINE_MAX = ONIX_LOG_MESSAGE_MAX + ONIX_LOG_TAG_MAX + 40;
+// Reserva inicial da linha formatada (só otimização; a linha pode crescer além disso).
+constexpr std::size_t kLineReserve = ONIX_LOG_MESSAGE_MAX + ONIX_LOG_TAG_MAX + 40;
+
+// Acrescenta `text` trocando '\n' e '\r' por espaço: uma linha do arquivo nunca se parte em duas.
+void appendSingleLine(std::string& out, const char* text) {
+  for (const char* p = text; *p != '\0'; ++p) {
+    out += (*p == '\n' || *p == '\r') ? ' ' : *p;
+  }
+}
 
 // Data UTC de um epoch em ms como "AAAA-MM-DDTHH:MM:SSZ". Relógio não sincronizado (0) vira
 // "----------------Z". Implementação civil a partir do Unix epoch, sem depender de <ctime>
@@ -90,6 +98,39 @@ void LogFileStore::offer(LogLevel level, const char* line) {
   } else {
     ++dropped_;  // lote cheio: a mais nova é perdida (a versão no Serial permanece)
   }
+#if ONIX_HAS_FREERTOS_MUTEX
+  xSemaphoreGive(mutex_);
+#endif
+}
+
+void LogFileStore::requeueFront(const std::vector<std::string>& lines) {
+  if (lines.empty()) {
+    return;
+  }
+#if ONIX_HAS_FREERTOS_MUTEX
+  xSemaphoreTake(mutex_, portMAX_DELAY);
+#else
+  std::lock_guard<std::mutex> lock(mutex_);
+#endif
+  // Sequência final = devolvidas (mais antigas) + pendentes atuais (mais novas), em ordem.
+  std::vector<std::string> combined;
+  combined.reserve(lines.size() + count_);
+  for (const std::string& line : lines) {
+    combined.push_back(line);
+  }
+  const std::size_t start = (next_ + ONIX_LOG_FILE_BATCH - count_) % ONIX_LOG_FILE_BATCH;
+  for (std::size_t i = 0; i < count_; ++i) {
+    combined.push_back(lines_[(start + i) % ONIX_LOG_FILE_BATCH]);
+  }
+  // Cabe no lote: mantém tudo. Excedente: descarta a cauda (as mais novas) e conta.
+  const std::size_t kept =
+      combined.size() < ONIX_LOG_FILE_BATCH ? combined.size() : ONIX_LOG_FILE_BATCH;
+  dropped_ += static_cast<uint32_t>(combined.size() - kept);
+  for (std::size_t i = 0; i < kept; ++i) {
+    lines_[i] = std::move(combined[i]);
+  }
+  next_ = kept % ONIX_LOG_FILE_BATCH;
+  count_ = kept;
 #if ONIX_HAS_FREERTOS_MUTEX
   xSemaphoreGive(mutex_);
 #endif
@@ -176,32 +217,19 @@ std::string formatLogFileLine(uint64_t timestampMs, LogLevel level, const char* 
   const char* safeTag = tag != nullptr ? tag : "";
   const char* safeMessage = message != nullptr ? message : "";
   std::string line;
-  line.reserve(LINE_MAX);
+  line.reserve(kLineReserve);
   line += formatUtcTimestamp(timestampMs);
   line += " [";
   line += logLevelName(level);
   line += "][";
-  line += safeTag;
+  appendSingleLine(line, safeTag);
   line += "] ";
-  line += safeMessage;
+  appendSingleLine(line, safeMessage);
   return line;
 }
 
 void logFileLine(uint64_t timestampMs, LogLevel level, const char* tag, const char* message) {
   globalLogFileStore().offer(level, formatLogFileLine(timestampMs, level, tag, message).c_str());
-}
-
-std::size_t segmentEnd(const std::string& text, std::size_t limit) {
-  if (text.size() <= limit) {
-    return std::string::npos;  // ainda cabe: não precisa cortar
-  }
-  std::size_t newest = std::string::npos;
-  for (std::size_t i = 0; i < limit && i < text.size(); ++i) {
-    if (text[i] == '\n') {
-      newest = i;  // guarda o '\n' para fechar a última linha inteira
-    }
-  }
-  return newest;
 }
 
 std::size_t segmentsToDrop(const std::array<std::size_t, ONIX_LOG_FILE_SEGMENTS>& sizes) {
@@ -251,6 +279,11 @@ std::vector<LogEntry> parseLogFileLines(const std::vector<std::string>& lines) {
     }
     // Depois de "[tag]" vem um espaço, e a mensagem começa em tagEnd + 2.
     const std::size_t messageStart = tagEnd + 2;
+    // "TS " antes do '[' do nível: sem carimbo a linha não é do formato gravado.
+    if (levelStart < 2 || raw[levelStart - 1] != ' ') {
+      continue;
+    }
+    const std::string ts = raw.substr(0, levelStart - 1);
 
     const std::string levelName = raw.substr(levelStart + 1, bracket - levelStart - 1);
     LogLevel level = LogLevel::Info;
@@ -267,6 +300,7 @@ std::vector<LogEntry> parseLogFileLines(const std::vector<std::string>& lines) {
     }
 
     LogEntry entry;
+    entry.ts = ts;
     entry.level = level;
     entry.tag = raw.substr(bracket + 2, tagEnd - (bracket + 2));
     entry.message = raw.substr(messageStart, std::string::npos);
@@ -312,7 +346,9 @@ std::string serializeLogHistoryJson(const std::vector<LogEntry>& ramEntries, uin
       json += ',';
     }
     const LogEntry& entry = fileEntries[i];
-    json += "{\"level\":\"";
+    json += "{\"ts\":\"";
+    appendJsonEscaped(json, entry.ts);
+    json += "\",\"level\":\"";
     json += logLevelName(entry.level);
     json += "\",\"tag\":\"";
     appendJsonEscaped(json, entry.tag);

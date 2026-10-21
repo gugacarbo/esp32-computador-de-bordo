@@ -77,20 +77,20 @@ Mantém o contrato da SPEC-0002 e é estendido com os campos do histórico (ADR-
 
 ## Casos de borda
 
-| #   | QUANDO ⟨gatilho⟩                                                                          | o sistema DEVE ⟨resposta⟩                                                                    |
-| --- | ----------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------- |
-| 1   | um `logf` de nível `info` ou `debug` é emitido                                            | NÃO entrar no lote do arquivo (fica só na RAM/Serial)                                        |
-| 2   | um `logf` de nível `warn` ou `error` é emitido                                            | entrar no lote em RAM sem fazer I/O                                                          |
-| 3   | o lote em RAM enche antes do flush                                                        | perder a linha mais nova e contá-la em `droppedLack`                                         |
-| 4   | o LittleFS está desmontado (OTA de `U_SPIFFS`) ou com pouco espaço livre                  | o flush pular o lote, mantê-lo pendente e não corromper o FS                                 |
-| 5   | ocorre um boot                                                                           | o resumo de boot (`boot #N, reset: …`) entrar no histórico mesmo em boot normal              |
-| 6   | o segmento mais novo atinge 12 KB                                                         | rotacionar 0→1→…→N-1 e reescrever no segmento 0                                              |
-| 7   | a cota de 48 KB estoura                                                                   | descartar o segmento mais antigo antes de gravar                                             |
-| 8   | `GET /api/logs` sem histórico injetado                                                    | responder o envelope do buffer em RAM, sem os campos `history`/`droppedLack`/`persisted`      |
-| 9   | `GET /api/logs/download` sem histórico injetado                                           | responder 404                                                                                |
-| 10  | `GET /api/logs/download` com método ≠ GET                                                 | responder 405 com `Allow: GET`                                                               |
-| 11  | o painel abre a seção "Diagnóstico"                                                       | consultar `GET /api/logs` a cada ~3 s e exibir sessão atual + histórico persistido            |
-| 12  | o operador clica em "Baixar histórico"                                                    | abrir `GET /api/logs/download` como download                                                 |
+| #   | QUANDO ⟨gatilho⟩                                                         | o sistema DEVE ⟨resposta⟩                                                                |
+| --- | ------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------- |
+| 1   | um `logf` de nível `info` ou `debug` é emitido                           | NÃO entrar no lote do arquivo (fica só na RAM/Serial)                                    |
+| 2   | um `logf` de nível `warn` ou `error` é emitido                           | entrar no lote em RAM sem fazer I/O                                                      |
+| 3   | o lote em RAM enche antes do flush                                       | perder a linha mais nova e contá-la em `droppedLack`                                     |
+| 4   | o LittleFS está desmontado (OTA de `U_SPIFFS`) ou com pouco espaço livre | o flush pular o lote, mantê-lo pendente e não corromper o FS                             |
+| 5   | ocorre um boot                                                           | o resumo de boot (`boot #N, reset: …`) entrar no histórico mesmo em boot normal          |
+| 6   | o segmento mais novo atinge 12 KB                                        | rotacionar 0→1→…→N-1 e reescrever no segmento 0                                          |
+| 7   | a cota de 48 KB estoura                                                  | descartar o segmento mais antigo antes de gravar                                         |
+| 8   | `GET /api/logs` sem histórico injetado                                   | responder o envelope do buffer em RAM, sem os campos `history`/`droppedLack`/`persisted` |
+| 9   | `GET /api/logs/download` sem histórico injetado                          | responder 404                                                                            |
+| 10  | `GET /api/logs/download` com método ≠ GET                                | responder 405 com `Allow: GET`                                                           |
+| 11  | o painel abre a seção "Diagnóstico"                                      | consultar `GET /api/logs` a cada ~3 s e exibir sessão atual + histórico persistido       |
+| 12  | o operador clica em "Baixar histórico"                                   | abrir `GET /api/logs/download` como download                                             |
 
 ## Questões em aberto
 

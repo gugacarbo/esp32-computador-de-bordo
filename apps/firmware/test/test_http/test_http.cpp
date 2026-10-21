@@ -98,6 +98,7 @@ int main() {
   {
     onix::LogFileStore fileStore;
     std::vector<onix::LogEntry> historyEntries(1);
+    historyEntries[0].ts = "2026-10-20T18:36:00Z";
     historyEntries[0].level = onix::LogLevel::Error;
     historyEntries[0].tag = "boot";
     historyEntries[0].message = "reset: brownout";
@@ -115,7 +116,8 @@ int main() {
     const auto body = apiHistory.handle({HttpMethod::Get, "/api/logs"}).body;
     assert(body.find("\"droppedLack\":0") != std::string::npos);
     assert(body.find("\"persisted\":" + std::to_string(fake.text.size())) != std::string::npos);
-    assert(body.find("\"history\":[{\"level\":\"error\",\"tag\":\"boot\","
+    assert(body.find("\"history\":[{\"ts\":\"2026-10-20T18:36:00Z\",\"level\":\"error\","
+                     "\"tag\":\"boot\","
                      "\"message\":\"reset: brownout\"}]") != std::string::npos);
     const auto download = apiHistory.handle({HttpMethod::Get, "/api/logs/download"});
     assert(download.status == 200);

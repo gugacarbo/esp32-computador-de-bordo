@@ -99,6 +99,9 @@ constexpr std::size_t ONIX_LOG_FILE_BATCH = 16;                 // linhas penden
 constexpr uint32_t ONIX_LOG_FILE_FLUSH_MS = 60000;              // período do flush (loop())
 constexpr std::size_t ONIX_LOG_FILE_MIN_FREE_BYTES = 64 * 1024; // piso de espaço livre no FS
 constexpr char ONIX_LOG_FILE_PATH_PREFIX[] = "/logs.";
+// GET /api/logs devolve só as N linhas mais novas do arquivo (o download traz tudo). Limita a RAM
+// e o JSON da rota sem perder o rastro recente entre reboots.
+constexpr std::size_t ONIX_LOG_HISTORY_MAX_ENTRIES = 64;
 
 // Cabeçalhos do contrato HTTP (SPEC-0002 §Rede e recursos).
 constexpr char ONIX_CONTENT_TYPE_HTML[] = "text/html; charset=utf-8";

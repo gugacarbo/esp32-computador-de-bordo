@@ -45,8 +45,9 @@ class LogFileSinkPort {
   virtual bool remove(std::size_t index) = 0;
 };
 
-// Lote em RAM das linhas warn+ ainda não gravadas. Nunca aloca (array fixo) e nunca faz I/O:
-// `offer` é seguro de chamar do sink Serial, inclusive da task OBD.
+// Lote em RAM das linhas warn+ ainda não gravadas. Não faz I/O: `offer` é seguro de chamar do
+// sink Serial, inclusive da task OBD. O array de slots é fixo, mas cada `std::string` copia a linha
+// e pode alocar memória acima do limite de SSO.
 class LogFileStore {
  public:
   LogFileStore();
@@ -59,6 +60,12 @@ class LogFileStore {
   // (as métricas info de 30 s ficam só na RAM/Serial). Quando o lote enche, a mais nova é perdida
   // e contada em droppedCount() — a linha continua no Serial, não vale bloquear.
   void offer(LogLevel level, const char* line);
+
+  // Devolve ao FRONT do lote linhas que o flush não conseguiu gravar (`lines` mais antiga primeiro),
+  // para que fiquem antes de qualquer linha nova já pendente. Se o total passar de
+  // ONIX_LOG_FILE_BATCH, descarta as mais NOVAS excedentes (cauda da sequência) e conta em
+  // droppedCount(). Mesmo mutex de `offer`; não faz I/O.
+  void requeueFront(const std::vector<std::string>& lines);
 
   // Cópia das linhas pendentes (mais antiga primeiro) e limpeza do lote. Chamar do flush, fora do
   // caminho quente.
@@ -115,21 +122,18 @@ uint64_t currentLogFileTimestampMs();
 // ---- Funções puras (sem estado, sem I/O) ----------------------------------------------------
 
 // Formata uma linha do arquivo: "2026-10-20T18:36:00Z [warn][bt] mensagem". `timestampMs` é epoch
-// em ms (UTC); com o relógio ainda não sincronizado (0), usa "----------------Z".
+// em ms (UTC); com o relógio ainda não sincronizado (0), usa "----------------Z". '\n' e '\r' em
+// tag/mensagem viram espaço, para que cada linha continue sendo uma única linha do arquivo.
 std::string formatLogFileLine(uint64_t timestampMs, LogLevel level, const char* tag,
                               const char* message);
-
-// Último '\n' antes de `limit` em `text` (o offset do '\n' ou npos): evita gravar linha pela
-// metade quando o segmento está perto do teto.
-std::size_t segmentEnd(const std::string& text, std::size_t limit);
 
 // Decide a rotação a partir dos tamanhos atuais (0 = inexistente). Devolve quantos segmentos serão
 // removidos do mais antigo antes de escrever em 0 (a cota só é reavaliada com o arquivo cheio).
 std::size_t segmentsToDrop(const std::array<std::size_t, ONIX_LOG_FILE_SEGMENTS>& sizes);
 
-// Parse de "TS [level][tag] msg" -> LogEntry com level/tag/message (o carimbo UTC fica no próprio
-// texto; `uptimeMs` sai 0, pois o histórico persistido só é exibido com o TS). Linhas fora do
-// formato são puladas. Usado pela rota HTTP para reaproveitar o histórico.
+// Parse de "TS [level][tag] msg" -> LogEntry com ts/level/tag/message. `ts` recebe o carimbo
+// como gravado; `uptimeMs` sai 0 (o arquivo não guarda uptime). Linhas sem TS ou fora do formato
+// são puladas. Usado pela rota HTTP para reaproveitar o histórico.
 std::vector<LogEntry> parseLogFileLines(const std::vector<std::string>& lines);
 
 // Corpo de GET /api/logs com o histórico do arquivo anexado ao buffer em RAM:

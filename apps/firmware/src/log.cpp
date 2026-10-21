@@ -234,8 +234,8 @@ void logf(LogLevel level, const char* tag, const char* format, ...) {
   }
   globalLogBuffer().append(monotonicUptimeMs(), level, safeTag, message);
   // Histórico persistido (ADR-0018): só warn+ chegam ao lote em RAM que o flush grava no arquivo.
-  // Sem timestamp aqui (o carimbo de parede é aplicado ao formatar no lote); a linha do arquivo é
-  // montada em log_file.cpp. Nunca faz I/O — só copia para o lote.
+  // O carimbo de parede vem de currentLogFileTimestampMs(); a formatação UTC e a linha do arquivo
+  // ficam em log_file.cpp. Não faz I/O: só formata e copia para o lote.
   if (static_cast<uint8_t>(level) <= static_cast<uint8_t>(LogLevel::Warn)) {
     logFileLine(currentLogFileTimestampMs(), level, safeTag, message);
   }

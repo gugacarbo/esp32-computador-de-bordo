@@ -29,6 +29,9 @@ struct LogEntry {
   LogLevel level = LogLevel::Info;
   std::string tag;      // truncada em ONIX_LOG_TAG_MAX - 1 caracteres
   std::string message;  // truncada em ONIX_LOG_MESSAGE_MAX - 1 caracteres
+  // Carimbo UTC como gravado no histórico persistido ("AAAA-MM-DDTHH:MM:SSZ" ou
+  // "----------------Z" sem relógio). Vazio nas entradas do buffer em RAM.
+  std::string ts;
 };
 
 class LogBuffer {

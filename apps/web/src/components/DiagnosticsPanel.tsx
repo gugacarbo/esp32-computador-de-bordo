@@ -1,6 +1,8 @@
 import { type ReactElement, useEffect, useState } from "react";
 import {
+	formatBytes,
 	formatUptime,
+	hasHistoryTimestamp,
 	LOGS_DOWNLOAD_PATH,
 	LOGS_PATH,
 	type LogEntry,
@@ -62,6 +64,9 @@ function HistoryRow({ entry }: { entry: LogHistoryEntry }): ReactElement {
 	return (
 		<li className="flex min-w-0 flex-col gap-0.5 border-t border-line py-1.5">
 			<div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5">
+				{hasHistoryTimestamp(entry.ts) && (
+					<span className="tabular-nums text-fg-muted">{entry.ts}</span>
+				)}
 				<LevelBadge level={entry.level} />
 				<span className="min-w-0 break-words text-accent">{entry.tag}</span>
 			</div>
@@ -193,9 +198,7 @@ export function DiagnosticsPanel(): ReactElement {
 				)}
 				{snapshot !== null && snapshot.history.length > 0 && (
 					<>
-						<p className="m-0 text-fg-muted">
-							Histórico persistido (sessões anteriores)
-						</p>
+						<p className="m-0 text-fg-muted">Histórico persistido</p>
 						<ul className="m-0 flex max-h-96 min-w-0 list-none flex-col overflow-y-auto p-0">
 							{snapshot.history.map((entry, index) => (
 								<HistoryRow

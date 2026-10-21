@@ -95,7 +95,7 @@ chamada retorna e torna o histórico resistente a corte de energia. O `flush` nu
 #    log.cpp — comentários que citam o nome do FS não contam).
 grep -nE "LittleFS\.|\bFile\b[ (]" apps/firmware/src/log.cpp && exit 1
 # 2. Formatação/rotação/parse testáveis no env native.
-PATH=$PWD/.venv/bin:$PATH bun run firmware:test   # test_log_file n/N verdes
+PATH=$PWD/.venv/bin:$PATH bun run firmware:test # test_log_file n/N verdes
 # 3. O contrato HTTP ganha o download e mantém /api/logs.
 grep -n "API_ROUTE_LOGS_DOWNLOAD" apps/firmware/include/api.h
 ```

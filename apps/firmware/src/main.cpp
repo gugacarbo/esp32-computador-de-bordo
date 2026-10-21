@@ -21,9 +21,11 @@
 #include <WiFi.h>
 
 #include <array>
+#include <atomic>
 #include <cstdio>
 #include <cstring>
 #include <ctime>
+#include <deque>
 #include <set>
 #include <string>
 #include <optional>
@@ -371,25 +373,54 @@ void obdTask(void* parameter) {
   onix::runObdTask(store);
 }
 
+// Estado do LittleFS compartilhado com o flush do histórico (declarado antes da OTA, que o altera).
+std::atomic<bool> g_littleFsMounted{false};
+// Pedido de flush fora do throttle de ONIX_LOG_FILE_FLUSH_MS (boot com FS montado, fim de OTA).
+std::atomic<bool> g_flushRequested{false};
+// Alvo da OTA em andamento: o LittleFS precisa ser remontado se a gravação falhar (onError).
+bool g_otaTargetsFilesystem = false;
+
+void requestLogFlush() { g_flushRequested.store(true); }
+
+void flushLogFile();
+
 // ArduinoOTA (ADR-0009): espota grava firmware (U_FLASH) no slot livre ou o LittleFS (U_SPIFFS).
 // Durante a gravação a task OBD fica em pausa cooperativa (cancela a busca BT e libera o rádio),
-// e o LittleFS é desmontado antes de ser sobrescrito. Sucesso reinicia a placa; erro retoma a task.
+// e o LittleFS é desmontado antes de ser sobrescrito. Sucesso reinicia a placa; erro retoma a task
+// e remonta o LittleFS se ele era o alvo.
 void setupOta() {
   ArduinoOTA.setHostname(onix::ONIX_OTA_HOSTNAME);
   ArduinoOTA.setPassword(onix::ONIX_OTA_PASSWORD);
   ArduinoOTA.setPort(onix::ONIX_OTA_PORT);
   ArduinoOTA.onStart([]() {
-    const bool filesystem = ArduinoOTA.getCommand() == U_SPIFFS;
+    g_otaTargetsFilesystem = ArduinoOTA.getCommand() == U_SPIFFS;
     onix::setObdPaused(true);
-    if (filesystem) {
+    if (g_otaTargetsFilesystem) {
       LittleFS.end();
-      g_littleFsMounted = false;  // flushLogFile() para de tocar o FS desmontado
+      g_littleFsMounted.store(false);  // flushLogFile() para de tocar o FS desmontado
     }
-    ONIX_LOGW("ota", "iniciada (%s)", filesystem ? "LittleFS" : "firmware");
+    ONIX_LOGW("ota", "iniciada (%s)", g_otaTargetsFilesystem ? "LittleFS" : "firmware");
   });
-  ArduinoOTA.onEnd([]() { ONIX_LOGW("ota", "concluída; reiniciando"); });
+  ArduinoOTA.onEnd([]() {
+    ONIX_LOGW("ota", "concluída; reiniciando");
+    // O restart sai logo depois deste callback, sem nova passagem pelo loop(): a flag sozinha não
+    // basta, então o flush roda já aqui para o registro de conclusão chegar à flash.
+    requestLogFlush();
+    flushLogFile();
+  });
   ArduinoOTA.onError([](ota_error_t error) {
     ONIX_LOGE("ota", "falhou (erro %u)", static_cast<unsigned>(error));
+    if (g_otaTargetsFilesystem) {
+      // Falha após o LittleFS.end(): remonta sem formatar (begin() padrão não formata).
+      const bool remounted = LittleFS.begin();
+      g_littleFsMounted.store(remounted);
+      if (remounted) {
+        ONIX_LOGW("fs", "LittleFS remontado após falha da OTA");
+      } else {
+        ONIX_LOGE("fs", "falha ao remontar o LittleFS após a OTA");
+      }
+      g_otaTargetsFilesystem = false;
+    }
     onix::setObdPaused(false);
   });
   ArduinoOTA.begin();
@@ -399,7 +430,6 @@ void setupOta() {
 // Histórico persistido no LittleFS (ADR-0018, SPEC-0004). O logf() oferece a linha ao lote em RAM
 // (LogFileStore); a gravação acontece só no flush do loop(), nunca no caminho quente. Implementação
 // da porta: File/LittleFS fica aqui, o core testável em log_file.cpp.
-bool g_littleFsMounted = false;
 
 class LittleFsLogSink : public onix::LogFileSinkPort {
  public:
@@ -456,6 +486,25 @@ class LittleFsLogSink : public onix::LogFileSinkPort {
     }
     return LittleFS.remove(onix::logFilePath(index).c_str());
   }
+
+  // true se o segmento está vazio, não existe ou termina em '\n'. Um corte de energia no meio de
+  // um append deixa a última linha sem '\n'; o flush seguinte fecha essa linha antes de continuar.
+  bool endsWithNewline(std::size_t index) const {
+    if (!g_littleFsMounted) {
+      return true;
+    }
+    File file = LittleFS.open(onix::logFilePath(index).c_str(), "r");
+    if (!file) {
+      return true;
+    }
+    const std::size_t bytes = file.size();
+    bool clean = true;
+    if (bytes > 0 && file.seek(bytes - 1)) {
+      clean = file.read() == '\n';
+    }
+    file.close();
+    return clean;
+  }
 };
 
 LittleFsLogSink g_logFileSink;
@@ -463,36 +512,94 @@ uint32_t g_lastLogFlushMs = 0;
 
 // Leitura do histórico para as rotas HTTP (ADR-0018): lê os segmentos do LittleFS e concatena na
 // ordem do mais antigo para o mais novo (N-1 -> 0). Sem I/O no caminho do log; só nestas rotas.
+// Linha do arquivo maior que isto é truncada na leitura (o formato gera no máximo ~MESSAGE_MAX + 60).
+constexpr std::size_t kLogLineReadMax = 512;
+constexpr std::size_t kLogReadChunk = 512;
+
+void appendCapped(std::string& line, const char* data, std::size_t length) {
+  const std::size_t room = kLogLineReadMax > line.size() ? kLogLineReadMax - line.size() : 0;
+  line.append(data, length < room ? length : room);
+}
+
+// Lê o segmento em blocos de kLogReadChunk (uma chamada de I/O por bloco, não por byte) e entrega
+// cada linha, sem '\n', a onLine. Uma linha pode atravessar blocos; a última sem '\n' também é
+// entregue.
+template <typename Fn>
+void forEachSegmentLine(File& file, Fn&& onLine) {
+  char buf[kLogReadChunk];
+  std::string line;
+  for (;;) {
+    const std::size_t n = file.read(reinterpret_cast<uint8_t*>(buf), sizeof buf);
+    if (n == 0 || n > sizeof buf) {  // fim do arquivo (ou erro de leitura, que vira -1 sem sinal)
+      break;
+    }
+    std::size_t start = 0;
+    for (std::size_t i = 0; i < n; ++i) {
+      if (buf[i] == '\n') {
+        appendCapped(line, buf + start, i - start);
+        onLine(line);
+        line.clear();
+        start = i + 1;
+      }
+    }
+    appendCapped(line, buf + start, n - start);
+  }
+  if (!line.empty()) {
+    onLine(line);
+  }
+}
+
+// Leitura do histórico para as rotas HTTP (ADR-0018): lê os segmentos do mais antigo (N-1) para o
+// mais novo (0). history() guarda só as ONIX_LOG_HISTORY_MAX_ENTRIES entradas mais recentes e
+// faz o parse linha a linha, sem montar a lista inteira do arquivo em memória.
 class LittleFsLogHistory : public onix::LogHistoryPort {
  public:
   std::vector<onix::LogEntry> history() const override {
-    const std::string text = dump();
-    std::vector<std::string> lines;
-    std::size_t start = 0;
-    while (start < text.size()) {
-      const std::size_t end = text.find('\n', start);
-      if (end == std::string::npos) {
-        lines.push_back(text.substr(start));
-        break;
-      }
-      lines.push_back(text.substr(start, end - start));
-      start = end + 1;
-    }
-    return onix::parseLogFileLines(lines);
-  }
-
-  std::string dump() const override {
     if (!g_littleFsMounted) {
       return {};
     }
-    std::string out;
+    std::deque<onix::LogEntry> newest;
     for (std::size_t i = onix::ONIX_LOG_FILE_SEGMENTS; i-- > 0;) {
       File file = LittleFS.open(onix::logFilePath(i).c_str(), "r");
       if (!file) {
         continue;
       }
-      while (file.available()) {
-        out += static_cast<char>(file.read());
+      forEachSegmentLine(file, [&newest](const std::string& line) {
+        for (onix::LogEntry& entry : onix::parseLogFileLines({line})) {
+          newest.push_back(std::move(entry));
+          if (newest.size() > onix::ONIX_LOG_HISTORY_MAX_ENTRIES) {
+            newest.pop_front();
+          }
+        }
+      });
+      file.close();
+    }
+    return std::vector<onix::LogEntry>(newest.begin(), newest.end());
+  }
+
+  // Download (GET /api/logs/download): concatenação crua de todos os segmentos, mais antigo primeiro.
+  std::string dump() const override {
+    if (!g_littleFsMounted) {
+      return {};
+    }
+    std::size_t total = 0;
+    for (std::size_t i = 0; i < onix::ONIX_LOG_FILE_SEGMENTS; ++i) {
+      total += g_logFileSink.size(i);  // = file.size() de cada segmento
+    }
+    std::string out;
+    out.reserve(total);
+    char buf[kLogReadChunk];
+    for (std::size_t i = onix::ONIX_LOG_FILE_SEGMENTS; i-- > 0;) {
+      File file = LittleFS.open(onix::logFilePath(i).c_str(), "r");
+      if (!file) {
+        continue;
+      }
+      for (;;) {
+        const std::size_t n = file.read(reinterpret_cast<uint8_t*>(buf), sizeof buf);
+        if (n == 0 || n > sizeof buf) {
+          break;
+        }
+        out.append(buf, n);
       }
       file.close();
     }
@@ -517,7 +624,9 @@ LittleFsLogHistory g_logHistory;
 // takePending esvazia o lote; se a gravação falhar, as linhas voltam a ficar pendentes.
 void flushLogFile() {
   const uint32_t now = millis();
-  if (now - g_lastLogFlushMs < onix::ONIX_LOG_FILE_FLUSH_MS) {
+  // requestLogFlush() fura o throttle (boot com FS montado, fim de OTA); a flag é consumida aqui.
+  const bool forced = g_flushRequested.exchange(false);
+  if (!forced && now - g_lastLogFlushMs < onix::ONIX_LOG_FILE_FLUSH_MS) {
     return;
   }
   g_lastLogFlushMs = now;
@@ -538,32 +647,51 @@ void flushLogFile() {
     sizes[i] = g_logFileSink.size(i);
   }
   if (sizes[0] >= onix::ONIX_LOG_FILE_SEGMENT_BYTES) {
+    bool rotated = true;
     const std::size_t toDrop = onix::segmentsToDrop(sizes);
     for (std::size_t i = onix::ONIX_LOG_FILE_SEGMENTS - toDrop; i < onix::ONIX_LOG_FILE_SEGMENTS; ++i) {
-      g_logFileSink.remove(i);
+      // Remover um segmento que não existe devolve false; só conta falha quando havia dados.
+      if (sizes[i] > 0 && !g_logFileSink.remove(i)) {
+        rotated = false;
+      }
     }
     for (std::size_t i = onix::ONIX_LOG_FILE_SEGMENTS - 1; i > 0; --i) {
-      if (sizes[i - 1] > 0) {
-        g_logFileSink.moveTo(i - 1, i);
+      if (sizes[i - 1] > 0 && !g_logFileSink.moveTo(i - 1, i)) {
+        rotated = false;
       }
+    }
+    // Rotação falhou e o segmento 0 já passou do dobro da cota: não cresce mais. As linhas ficam
+    // pendentes no lote (takePending ainda não foi chamado) até a próxima rotação dar certo.
+    if (!rotated && g_logFileSink.size(0) > 2 * onix::ONIX_LOG_FILE_SEGMENT_BYTES) {
+      return;
     }
   }
 
+  // Corte de energia no meio de um append deixa a última linha sem '\n': fecha-a antes de seguir,
+  // senão a primeira linha nova se colaria a ela. Se nem isso couber, o lote segue pendente.
+  if (!g_logFileSink.endsWithNewline(0) && !g_logFileSink.append(0, "\n")) {
+    return;
+  }
+
+  // Appends por linha, parando ao atingir o teto do segmento: o segmento não passa do teto por um
+  // lote inteiro. O resto volta para a frente da fila e a próxima rotação o recebe.
+  std::size_t segmentBytes = g_logFileSink.size(0);
   const std::vector<std::string> batch = store.takePending();
   std::size_t written = 0;
-  bool ok = true;
   for (const std::string& line : batch) {
-    if (!g_logFileSink.append(0, line + "\n")) {
-      ok = false;
+    if (segmentBytes >= onix::ONIX_LOG_FILE_SEGMENT_BYTES) {
       break;
     }
+    const std::string text = line + "\n";
+    if (!g_logFileSink.append(0, text)) {
+      break;  // falha de escrita: esta linha e as seguintes voltam para a fila
+    }
+    segmentBytes += text.size();
     ++written;
   }
-  if (!ok) {
-    // Devolve o que não foi gravado (as demais ficam pendentes para a próxima passagem).
-    for (std::size_t i = written; i < batch.size(); ++i) {
-      onix::globalLogFileStore().offer(onix::LogLevel::Warn, batch[i].c_str());
-    }
+  if (written < batch.size()) {
+    store.requeueFront(std::vector<std::string>(batch.begin() + static_cast<std::ptrdiff_t>(written),
+                                                batch.end()));
   }
 }
 
@@ -610,7 +738,7 @@ void logBootInfo() {
   const bool abnormal = reason == ESP_RST_PANIC || reason == ESP_RST_INT_WDT ||
                         reason == ESP_RST_TASK_WDT || reason == ESP_RST_WDT ||
                         reason == ESP_RST_BROWNOUT;
-  char summary[ONIX_LOG_MESSAGE_MAX];
+  char summary[onix::ONIX_LOG_MESSAGE_MAX];
   std::snprintf(summary, sizeof summary, "boot #%lu, reset: %s",
                 static_cast<unsigned long>(boots), resetReasonName(reason));
   // O resumo de boot entra no histórico persistido mesmo em boot normal (ADR-0018): é o marcador
@@ -781,6 +909,12 @@ void applyStaticHost() {
             gateway.toString().c_str());
 }
 
+// Relógio real para o histórico (ADR-0018): SNTP só depois da STA conectada, uma vez por conexão
+// (StationUp chega uma vez por transição). O modo AP nunca chama configTime().
+void startSntp() {
+  configTime(0, 0, "pool.ntp.org", "time.google.com");
+}
+
 void applyWifiAction(onix::WifiAction action) {
   switch (action) {
     case onix::WifiAction::None:
@@ -790,6 +924,7 @@ void applyWifiAction(onix::WifiAction action) {
       return;
     case onix::WifiAction::StationUp:
       applyStaticHost();
+      startSntp();
       return;
     case onix::WifiAction::StationDown:
       // A reconexão automática do Arduino reusaria o IP fixo; com DHCP, um hotspot religado em
@@ -877,6 +1012,7 @@ void setup() {
     g_littleFsMounted = true;
     indexStaticFiles("/");
     ONIX_LOGI("fs", "LittleFS montado (%u arquivos)", static_cast<unsigned>(g_staticFiles.size()));
+    requestLogFlush();  // primeiro flush já no boot, sem esperar o throttle de 60 s
   }
 
   // POST /api/obd/reconnect (ADR-0013): o roteador só sinaliza; a task OBD retoma a busca no

@@ -22,6 +22,8 @@ export interface LogHistoryEntry {
 	level: LogLevel;
 	tag: string;
 	message: string;
+	/** Carimbo ISO 8601 (UTC) ou "----------------Z" sem relógio; ausente em firmware anterior. */
+	ts?: string;
 }
 
 export interface LogsSnapshot {
@@ -64,7 +66,14 @@ function parseHistoryEntry(raw: unknown): LogHistoryEntry | null {
 	const { level, tag, message } = record;
 	if (!isLogLevel(level)) return null;
 	if (typeof tag !== "string" || typeof message !== "string") return null;
-	return { level, tag, message };
+	const entry: LogHistoryEntry = { level, tag, message };
+	if (typeof record.ts === "string") entry.ts = record.ts;
+	return entry;
+}
+
+/** Indica se o carimbo do histórico é exibível: não vazio e com algum dígito (não "----…Z"). */
+export function hasHistoryTimestamp(ts: string | undefined): ts is string {
+	return ts !== undefined && /[0-9]/.test(ts);
 }
 
 /** Campos do histórico persistido são opcionais: firmware antigo (sem ADR-0018) não os envia. */
@@ -75,8 +84,10 @@ function parseOptionalHistory(record: Record<string, unknown>): {
 } | null {
 	const droppedLack = record.droppedLack ?? 0;
 	const persisted = record.persisted ?? 0;
-	if (!isNonNegativeNumber(droppedLack) || !Number.isInteger(droppedLack)) return null;
-	if (!isNonNegativeNumber(persisted) || !Number.isInteger(persisted)) return null;
+	if (!isNonNegativeNumber(droppedLack) || !Number.isInteger(droppedLack))
+		return null;
+	if (!isNonNegativeNumber(persisted) || !Number.isInteger(persisted))
+		return null;
 	const rawHistory = record.history ?? [];
 	if (!Array.isArray(rawHistory)) return null;
 	const history: LogHistoryEntry[] = [];
